@@ -18,7 +18,7 @@
 
 import { getDestinations } from '@/data/destinations'
 import type { Continent, Destination } from '@/types'
-import { createRng, shuffle } from './seededRandom'
+import { createRng, shuffle, type Rng } from './seededRandom'
 import { haversineKm } from './geoUtils'
 import { dateKeyToDayNumber } from './timeUtils'
 import {
@@ -117,17 +117,29 @@ function conflicts(candidate: Destination, recent: Destination[]): boolean {
  * days the remaining pool is whatever nobody wanted, frequently all from the
  * same continent, and the rule quietly breaks.
  *
- * So the continent is chosen first, and the city second. Keeping one queue per
- * continent and always drawing from the one with the most days left is the
- * standard greedy for spacing repeated items out, and it cannot paint itself
- * into a corner as long as no single continent holds more than half the
- * dataset. The largest here is Asia at just under 30%, so back-to-back
- * continents are impossible by construction rather than by luck.
+ * So the continent is chosen first, and the city second.
  *
- * Country spacing and the minimum hop are still best-effort: they are checked
- * when choosing which city to take from the winning continent's queue.
+ * Always taking the continent with the most days left is the textbook greedy
+ * for spacing repeated items out, and it is safe, but it is also rigid: with
+ * stable proportions it settles into a visible rotation, and a viewer starts
+ * to notice that Europe comes round every fifth day. So the continent is
+ * drawn at random instead, weighted by how many days it has left — with one
+ * hard override. Any continent holding more than half of everything still
+ * unscheduled must be placed immediately, because from that point on there
+ * are not enough other days left to keep it apart from itself. That single
+ * rule is what makes "never the same continent twice running" a guarantee
+ * rather than a hope; the randomness only ever chooses between options that
+ * are all already safe.
+ *
+ * Country spacing and the minimum hop stay best-effort: they are checked when
+ * choosing which city to take from the winning continent's queue.
  */
-function scheduleEpoch(order: number[], context: number[], all: readonly Destination[]): number[] {
+function scheduleEpoch(
+  order: number[],
+  context: number[],
+  all: readonly Destination[],
+  rng: Rng,
+): number[] {
   const queues = new Map<Continent, number[]>()
   for (const index of order) {
     const continent = all[index].continent
@@ -140,15 +152,38 @@ function scheduleEpoch(order: number[], context: number[], all: readonly Destina
   const recent: Destination[] = context.map((i) => all[i])
   let previousContinent: Continent | null =
     recent.length > 0 ? recent[recent.length - 1].continent : null
+  let remaining = order.length
 
   for (let i = 0; i < order.length; i++) {
-    // Continents that still have days left, fullest first. The name is the
-    // tie-break so the result never depends on Map iteration order.
+    // Sorted by name, never by Map iteration order, so the result is stable.
     const available = [...queues.entries()]
       .filter(([, queue]) => queue.length > 0)
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .sort((a, b) => a[0].localeCompare(b[0]))
 
-    const chosen = available.find(([continent]) => continent !== previousContinent) ?? available[0]
+    const eligible = available.filter(([continent]) => continent !== previousContinent)
+    // Holding more than half the remaining days means it can no longer be
+    // kept apart from itself unless it goes now.
+    const forced = eligible.find(([, queue]) => queue.length * 2 > remaining)
+
+    let chosen: [Continent, number[]]
+    if (forced) {
+      chosen = forced
+    } else if (eligible.length > 0) {
+      const total = eligible.reduce((sum, [, queue]) => sum + queue.length, 0)
+      let ticket = rng.next() * total
+      chosen = eligible[eligible.length - 1]
+      for (const entry of eligible) {
+        ticket -= entry[1].length
+        if (ticket <= 0) {
+          chosen = entry
+          break
+        }
+      }
+    } else {
+      // Only the previous continent is left, which the forced rule above
+      // makes unreachable except on the very last day of an epoch.
+      chosen = available[0]
+    }
     const queue = chosen[1]
 
     // Within that continent, take the first city that also clears the country
@@ -167,6 +202,7 @@ function scheduleEpoch(order: number[], context: number[], all: readonly Destina
     recent.push(all[index])
     if (recent.length > LOOKBACK) recent.shift()
     previousContinent = all[index].continent
+    remaining--
   }
 
   return result
@@ -194,7 +230,12 @@ function epochOrder(seed: string, epoch: number, depth = SEAM_DEPTH): number[] {
       ? epochOrder(seed, epoch - 1, depth - 1)
       : rawOrder(seed, epoch - 1, all.length)
   const context = previous.slice(Math.max(0, previous.length - LOOKBACK))
-  const order = scheduleEpoch(rawOrder(seed, epoch, all.length), context, all)
+  const order = scheduleEpoch(
+    rawOrder(seed, epoch, all.length),
+    context,
+    all,
+    createRng(`${seed}|schedule|${epoch}`),
+  )
 
   repairedOrderCache.set(key, order)
   return order
