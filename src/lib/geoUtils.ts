@@ -129,11 +129,25 @@ export function runToBearingWindow(run: { start: number; length: number }): {
   from: number
   span: number
 } {
+  // A run covering the whole compass has no edges to stay clear of; applying
+  // the inset there would carve a wedge of perfectly good land out of the
+  // middle of an inland city.
+  if (run.length >= SECTORS) return { from: 0, span: 360 }
   return {
     from: run.start * SECTOR_DEG + SECTOR_INSET_DEG,
     span: Math.max(0, run.length * SECTOR_DEG - SECTOR_INSET_DEG * 2),
   }
 }
+
+/** True when a bearing sits inside the given run of sectors. */
+export function isBearingInRun(run: { start: number; length: number }, bearingDeg: number): boolean {
+  if (run.length >= SECTORS) return true
+  if (run.length <= 0) return false
+  const sector = Math.floor(normaliseBearing(bearingDeg) / SECTOR_DEG) % SECTORS
+  return normaliseBearing((sector - run.start) * SECTOR_DEG) < run.length * SECTOR_DEG
+}
+
+export { SECTORS, SECTOR_DEG }
 
 export interface RoamArea {
   centre: Coord
@@ -172,6 +186,30 @@ export function pointInRoamArea(
   const bearing = normaliseBearing(area.from + rng.next() * area.span)
   const km = area.radiusKm * maxFraction * Math.pow(rng.next(), centreBias)
   return project(area.centre, km, bearing)
+}
+
+/** True when a point lies inside the wedge, both in range and in bearing. */
+export function isInRoamArea(area: RoamArea, point: Coord, marginDeg = 0): boolean {
+  if (haversineKm(area.centre, point) > area.radiusKm) return false
+  if (area.span >= 360 - 1e-6) return true
+  const offset = normaliseBearing(bearingBetween(area.centre, point) - area.from)
+  return offset <= area.span + marginDeg
+}
+
+/**
+ * True when the whole straight leg between two points stays on verified land.
+ *
+ * Both endpoints being inside the wedge is not enough. A wedge wider than 180
+ * degrees is not convex, so a leg between two points on either side of the
+ * missing slice cuts straight through it — which for a city like Melbourne
+ * means walking across the bay. Sampling the chord catches that.
+ */
+export function legStaysOnLand(area: RoamArea, a: Coord, b: Coord, samples = 12): boolean {
+  if (area.span >= 360 - 1e-6) return true
+  for (let i = 0; i <= samples; i++) {
+    if (!isInRoamArea(area, lerpCoord(a, b, i / samples))) return false
+  }
+  return true
 }
 
 /** Clamp a coordinate back inside the safe wedge if it has drifted out. */

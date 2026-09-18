@@ -1,0 +1,33 @@
+/*
+ * The two things the control panel needs that Tailwind cannot say cleanly:
+ * a hatch fill that marks "moving" stretches on the day timeline, and a slow
+ * pulse on the now-marker so it reads as live rather than as a static rule.
+ */
+
+.wm-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.28) 0 5px,
+    rgb(255 255 255 / 0) 5px 10px
+  );
+}
+
+.wm-pulse {
+  animation: wm-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes wm-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A tidier range track than the browser default, in both themes. */
+.wm-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.5) transparent;
+}

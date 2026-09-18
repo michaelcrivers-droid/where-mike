@@ -51,6 +51,8 @@ export interface Destination {
   landSectors: number
 }
 
+import type { RoamArea } from '@/lib/geoUtils'
+
 export type MovementMode = 'stationary' | 'walking' | 'tourist' | 'driving'
 
 /** A single point on the day's plan, in minutes since local midnight. */
@@ -74,6 +76,11 @@ export interface MovementPlan {
   waypoints: Waypoint[]
   /** Contiguous segments derived from the waypoints, for the timeline UI. */
   segments: MovementSegment[]
+  /**
+   * The verified-land wedge this day is confined to. Carried on the plan so
+   * position lookups can clamp to it without recomputing.
+   */
+  area: RoamArea
 }
 
 export interface MovementSegment {

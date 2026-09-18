@@ -19,8 +19,8 @@ import type {
   Destination, LiveLocation, MovementMode, MovementPlan, MovementSegment, Waypoint,
 } from '@/types'
 import {
-  bearingBetween, easeInOut, haversineKm, lerpCoord, pointInRoamArea, project, roamArea,
-  type Coord, type RoamArea,
+  bearingBetween, clampToRoamArea, easeInOut, haversineKm, isInRoamArea, legStaysOnLand,
+  lerpCoord, pointInRoamArea, project, roamArea, type Coord, type RoamArea,
 } from './geoUtils'
 import { createRng, hashString, type Rng } from './seededRandom'
 import { MINUTES_PER_DAY } from './timeUtils'
@@ -116,8 +116,10 @@ function bendPoint(from: Coord, to: Coord, area: RoamArea, rng: Rng): Coord | nu
   const sidestep = distance * rng.range(0.06, 0.16) * (rng.chance(0.5) ? 1 : -1)
   const perpendicular = bearingBetween(from, to) + 90
   const bent = project(midpoint, Math.abs(sidestep), sidestep >= 0 ? perpendicular : perpendicular + 180)
-  // Only keep the detour when it stays comfortably inside the safe area.
-  return haversineKm(area.centre, bent) <= area.radiusKm ? bent : null
+  // A sidestep can push the point out of the land wedge even though both ends
+  // of the leg are inside it, so the detour is dropped unless it also lands on
+  // verified ground. A straight leg is always safe: the wedge is convex.
+  return isInRoamArea(area, bent) ? bent : null
 }
 
 function travelMinutes(distanceKm: number, profile: Profile): { minutes: number; speed: number } {
@@ -126,7 +128,16 @@ function travelMinutes(distanceKm: number, profile: Profile): { minutes: number;
   return { minutes, speed }
 }
 
-/** Build the day. */
+/**
+ * Build the day.
+ *
+ * Two passes. The first picks the stops and works out how long the travelling
+ * between them takes; the second spreads whatever time is left across the
+ * stops themselves. Doing it in that order is what keeps the legs honest —
+ * laying the day out greedily from the front leaves the journey home with
+ * whatever minutes happen to remain, which is how you end up with someone
+ * apparently driving across town at 55 km/h.
+ */
 export function createMovementPlan(options: PlanOptions): MovementPlan {
   const { destination, mode, radiusMultiplier = 1 } = options
   const profile = PROFILES[mode]
@@ -144,71 +155,99 @@ export function createMovementPlan(options: PlanOptions): MovementPlan {
   }
   if (wake >= homeBy - 120) wake = Math.max(300, homeBy - 240)
 
+  // Pass one: where we are going, and how long the moving takes.
+  //
+  // A stop is only accepted when the leg to it *and* the eventual leg home
+  // both stay on land for their whole length — any stop may turn out to be
+  // the last one of the day. Where the land wedge is convex this passes
+  // first time; around a bay it quietly rejects the crossings.
+  const targets: Coord[] = []
+  const plannedTrips = rng.int(profile.trips[0], profile.trips[1])
+  for (let i = 0; i < plannedTrips; i++) {
+    const from = targets.length > 0 ? targets[targets.length - 1] : home
+    let accepted: Coord | null = null
+    for (let attempt = 0; attempt < 12 && !accepted; attempt++) {
+      const candidate = pointInRoamArea(area, rng, profile.maxFraction, profile.centreBias)
+      if (legStaysOnLand(area, from, candidate) && legStaysOnLand(area, candidate, home)) {
+        accepted = candidate
+      }
+    }
+    // Nowhere reachable without crossing water: end the day's plan here.
+    if (!accepted) break
+    targets.push(accepted)
+  }
+
+  const travelFor = (stops: Coord[]): number[] => {
+    const route = [home, ...stops, home]
+    return route.slice(0, -1).map((point, i) => travelMinutes(haversineKm(point, route[i + 1]), profile).minutes)
+  }
+
+  const MIN_DWELL = 12
+  let legs = travelFor(targets)
+  let travelTotal = legs.reduce((sum, m) => sum + m, 0)
+  // Drop stops from the end until the day genuinely fits.
+  while (targets.length > 0 && wake + travelTotal + targets.length * MIN_DWELL > homeBy) {
+    targets.pop()
+    legs = travelFor(targets)
+    travelTotal = legs.reduce((sum, m) => sum + m, 0)
+  }
+
+  if (targets.length === 0) {
+    // Nothing fitted — spend the day at home rather than emitting a stub trip.
+    return finalise(options, [
+      { minute: 0, ...home, dwell: true, label: homeLabel },
+      { minute: MINUTES_PER_DAY, ...home, dwell: true, label: homeLabel },
+    ])
+  }
+
+  // Pass two: share out the time that is not spent moving. The draws keep
+  // their natural unevenness; scaling only stretches or squeezes them as a
+  // group so the stops actually fill the day.
+  const rawDwells = targets.map(() => rng.int(profile.dwellMinutes[0], profile.dwellMinutes[1]))
+  const rawTotal = rawDwells.reduce((sum, m) => sum + m, 0)
+  const available = homeBy - wake - travelTotal
+  const scale = rawTotal > 0 ? Math.min(2.2, Math.max(0.35, available / rawTotal)) : 1
+  const dwells = rawDwells.map((m) => Math.max(MIN_DWELL, Math.round(m * scale)))
+
   const waypoints: Waypoint[] = [
     { minute: 0, ...home, dwell: true, label: homeLabel },
+    // Leaving is its own waypoint: same spot, but no longer parked.
+    { minute: wake, ...home, dwell: false, label: 'Heading out' },
   ]
 
-  const tripCount = rng.int(profile.trips[0], profile.trips[1])
   const stopLabels = STOP_LABELS[mode]
   let cursor = wake
   let current: Coord = home
-  let stops = 0
 
-  // Leaving the hotel is itself a waypoint: same spot, but no longer parked.
-  waypoints.push({ minute: cursor, ...home, dwell: false, label: 'Heading out' })
-
-  for (let trip = 0; trip < tripCount; trip++) {
-    const target = pointInRoamArea(area, rng, profile.maxFraction, profile.centreBias)
-    const leg = haversineKm(current, target)
-    const { minutes } = travelMinutes(leg, profile)
-
-    // Reserve enough time to get home afterwards.
-    const returnLeg = travelMinutes(haversineKm(target, home), profile).minutes
-    if (cursor + minutes + returnLeg + 20 > homeBy) break
-
-    const bend = bendPoint(current, target, area, rng)
-    if (bend) {
-      waypoints.push({
-        minute: clampMinute(cursor + Math.round(minutes * 0.5)),
-        ...bend,
-        dwell: false,
-        label: 'On the move',
-      })
+  const pushLeg = (from: Coord, to: Coord, minutes: number, label: string): void => {
+    // Only bend a leg with enough minutes in it to split meaningfully, and
+    // split the time where the distance actually falls rather than halfway.
+    if (minutes >= 8) {
+      const bend = bendPoint(from, to, area, rng)
+      if (bend && legStaysOnLand(area, from, bend) && legStaysOnLand(area, bend, to)) {
+        const first = haversineKm(from, bend)
+        const second = haversineKm(bend, to)
+        const share = first + second > 0 ? first / (first + second) : 0.5
+        const at = Math.round(minutes * Math.min(0.75, Math.max(0.25, share)))
+        if (at >= 1 && minutes - at >= 1) {
+          waypoints.push({ minute: clampMinute(cursor + at), ...bend, dwell: false, label })
+        }
+      }
     }
-
     cursor = clampMinute(cursor + minutes)
-    const stopLabel = stopLabels[(hashString(`${options.dateKey}${trip}`) + trip) % stopLabels.length]
+  }
+
+  targets.forEach((target, index) => {
+    pushLeg(current, target, legs[index], 'On the move')
+    const stopLabel = stopLabels[(hashString(`${options.dateKey}${index}`) + index) % stopLabels.length]
     waypoints.push({ minute: cursor, ...target, dwell: true, label: stopLabel })
-
-    const maxDwell = Math.max(15, homeBy - cursor - returnLeg - 10)
-    const dwell = Math.min(maxDwell, rng.int(profile.dwellMinutes[0], profile.dwellMinutes[1]))
-    cursor = clampMinute(cursor + dwell)
+    cursor = clampMinute(cursor + dwells[index])
     waypoints.push({ minute: cursor, ...target, dwell: false, label: 'On the move' })
-
     current = target
-    stops++
-    if (cursor + returnLeg + 15 > homeBy) break
-  }
+  })
 
-  if (stops === 0) {
-    // Nothing fitted — spend the day at home rather than emitting a stub trip.
-    waypoints.length = 1
-    waypoints.push({ minute: MINUTES_PER_DAY, ...home, dwell: true, label: homeLabel })
-    return finalise(options, waypoints)
-  }
-
-  const backHome = travelMinutes(haversineKm(current, home), profile).minutes
-  const arriveHome = clampMinute(Math.max(cursor + backHome, Math.min(homeBy, MINUTES_PER_DAY - 5)))
-  const homeBend = bendPoint(current, home, area, rng)
-  if (homeBend) {
-    waypoints.push({
-      minute: clampMinute(cursor + Math.round((arriveHome - cursor) * 0.5)),
-      ...homeBend,
-      dwell: false,
-      label: 'Heading back',
-    })
-  }
-  waypoints.push({ minute: arriveHome, ...home, dwell: true, label: homeLabel })
+  pushLeg(current, home, legs[legs.length - 1], 'Heading back')
+  waypoints.push({ minute: cursor, ...home, dwell: true, label: homeLabel })
   waypoints.push({ minute: MINUTES_PER_DAY, ...home, dwell: true, label: homeLabel })
 
   return finalise(options, waypoints)
@@ -253,6 +292,7 @@ function finalise(options: PlanOptions, waypoints: Waypoint[]): MovementPlan {
     dateKey: options.dateKey,
     waypoints: cleaned,
     segments,
+    area: roamArea(options.destination, options.radiusMultiplier ?? 1),
   }
 }
 
@@ -291,7 +331,9 @@ export function resolvePosition(plan: MovementPlan, minuteOfDay: number): LiveLo
   const phase = hashString(`${plan.dateKey}|${plan.destination.id}|${i}`) % 1000
 
   if (a.dwell || b.minute <= a.minute) {
-    const drifted = stationaryDrift(a, minute, phase)
+    // Clamping is belt and braces: a few metres of drift at a waypoint that
+    // sits right on a sector boundary could otherwise nudge it over the line.
+    const drifted = clampToRoamArea(plan.area, stationaryDrift(a, minute, phase))
     return {
       ...drifted,
       heading: null,
@@ -305,7 +347,7 @@ export function resolvePosition(plan: MovementPlan, minuteOfDay: number): LiveLo
 
   const t = (minute - a.minute) / (b.minute - a.minute)
   const eased = easeInOut(t)
-  const point = lerpCoord(a, b, eased)
+  const point = clampToRoamArea(plan.area, lerpCoord(a, b, eased))
   const distanceKm = haversineKm(a, b)
   const durationMin = b.minute - a.minute
   // Easing means instantaneous speed peaks in the middle of the leg.
