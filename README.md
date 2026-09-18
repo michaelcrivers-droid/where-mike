@@ -17,7 +17,7 @@ It is a joke gift, built to look like a real product rather than a prank.
 
 ## What it does
 
-- Picks one of **1,319 real destinations** across **183 countries and
+- Picks one of **1,318 real destinations** across **183 countries and
   territories** for each
   calendar date, deterministically.
 - Simulates a believable day of movement around that city — a morning start,
@@ -111,7 +111,7 @@ must go now. That override is what makes it a guarantee; the weighting is what
 stops the result settling into a visible five-day rotation.
 
 Verified over 4,000 consecutive days: zero back-to-back continents, zero hops
-under 400 km, closest city repeat 46 days apart, all 1,319 cities used.
+under 400 km, closest city repeat 46 days apart, every city used.
 
 ### Which midnight?
 
@@ -176,9 +176,12 @@ redundant: a land run wider than 180° is not convex, so in Melbourne a leg
 between two perfectly valid stops can cut straight across Port Phillip Bay.
 
 The roaming radius itself is shrunk at build time until enough of the compass
-is dry, which is why Cape Town gets 8 km and a coral atoll gets 1.4 km. Four
-places (Gibraltar's centroid, two atolls, one island town) could not be made
-safe at any radius and were dropped.
+is dry *and* enough of it is contiguous, since a day uses one wedge. That is
+why Heidelberg gets 5 km, Cape Town 8 km, and Key West just over 1 km. Two
+places could not be made safe at any radius and were dropped. Five had a
+published centroid sitting in open water — Copenhagen's in the harbour,
+Geneva's in the lake — and were nudged a few hundred metres onto land rather
+than thrown away.
 
 Each row also carries a **verified ceiling** — how far that wedge can be
 stretched and still be land, sampled densely along its whole length. The
@@ -210,7 +213,7 @@ and skips rather than fails without it.
 
 ## The destination dataset
 
-`src/data/destinations.generated.ts` — 1,319 rows spanning 183 ISO 3166-1
+`src/data/destinations.generated.ts` — 1,318 rows spanning 183 ISO 3166-1
 codes (179 distinct country names; the rest are territories such as Puerto
 Rico, Hong Kong and French Polynesia), 38 KB gzipped.
 
@@ -226,7 +229,7 @@ Geographic spread:
 
 | Continent | Count | Share |
 | --- | ---: | ---: |
-| Asia | 389 | 29.5% |
+| Asia | 388 | 29.4% |
 | Europe | 367 | 27.8% |
 | Africa | 219 | 16.6% |
 | North America | 191 | 14.5% |
@@ -391,7 +394,7 @@ It lets you:
 - try a different seed and see how much the sequence changes
 - switch movement mode and scrub the time of day
 - inspect the day's movement plan as a 24-hour timeline
-- force a specific city out of all 1,319
+- force a specific city out of all 1,318
 - reroll the movement plan, or scale the roaming radius
 - turn on accelerated-day testing
 - toggle the debug overlay and override the display name
@@ -482,12 +485,14 @@ npm test                                           # the whole suite
 WM_FULL=1 npx vitest run src/lib/__tests__/exhaustive.test.ts   # the full land sweep
 ```
 
-293 tests. The ones that matter most:
+294 tests. The ones that matter most:
 
 - **`exhaustive.test.ts`** walks every third destination × every mode × four
   dates × every three minutes and checks each position is inside both the
-  radius and a verified-land sector. `WM_FULL=1` runs all 1,319 cities — about
-  ten million sampled positions.
+  radius and a verified-land sector — but only against the mask, so see below.
+- **`landTruth.test.ts`** is the one that counts. It ignores the mask and tests
+  each coordinate against the Natural Earth polygons directly. `WM_FULL=1`
+  runs every destination in every mode: **9,110,016 positions, none in water.**
 - **`radius.test.ts`** does the same with the roaming multiplier at 0.25x
   through 4x, against the verified ceiling.
 - **`landSafety.test.ts`**, **`dailyDestination.test.ts`** and

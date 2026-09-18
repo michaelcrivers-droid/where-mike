@@ -162,7 +162,19 @@ export function createMovementPlan(options: PlanOptions): MovementPlan {
   // the last one of the day. Where the land wedge is convex this passes
   // first time; around a bay it quietly rejects the crossings.
   const targets: Coord[] = []
-  const plannedTrips = rng.int(profile.trips[0], profile.trips[1])
+  /*
+   * A small town gets more outings, not a duller day.
+   *
+   * The profiles assume a few kilometres to play with; on a narrow island like
+   * Key West or Bocas del Toro the safe area is under a kilometre across, and
+   * applying the same trip count and centre bias produced a day that barely
+   * registered as movement. Somewhere that small is walked end to end several
+   * times over, so the plan makes more trips and uses more of the space.
+   */
+  const compact = area.radiusKm < 1.8
+  const plannedTrips = rng.int(profile.trips[0], profile.trips[1]) + (compact ? 3 : 0)
+  const maxFraction = compact ? Math.min(1, profile.maxFraction * 1.7) : profile.maxFraction
+  const centreBias = compact ? Math.max(1, profile.centreBias * 0.6) : profile.centreBias
   /*
    * A stop has to be far enough from the last one to be worth calling a trip.
    * Points are drawn with a bias towards the middle of town, and on an unlucky
@@ -177,7 +189,7 @@ export function createMovementPlan(options: PlanOptions): MovementPlan {
     let accepted: Coord | null = null
     let fallback: Coord | null = null
     for (let attempt = 0; attempt < 14 && !accepted; attempt++) {
-      const candidate = pointInRoamArea(area, rng, profile.maxFraction, profile.centreBias)
+      const candidate = pointInRoamArea(area, rng, maxFraction, centreBias)
       if (!legStaysOnLand(area, from, candidate) || !legStaysOnLand(area, candidate, home)) continue
       // Safe, but possibly too close; keep it in case nothing better turns up.
       fallback ??= candidate
