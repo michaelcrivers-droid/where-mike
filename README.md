@@ -301,6 +301,14 @@ set the build command to `npm run build` and the output directory to `dist`.
 Leave `VITE_BASE` unset — a Pages site is served from the domain root, so the
 default relative base is correct.
 
+### One console 404 you cannot fix
+
+On a GitHub Pages *project* site the app lives under `/where-mike/`, but a
+browser looking for a fallback favicon probes `/favicon.ico` at the domain
+root — a path only the `<user>.github.io` repository can serve. Every resource
+the page actually requests returns 200; that one probe is the exception, and it
+has no effect on anything. It disappears on a user site or a custom domain.
+
 ### Monthly cost
 
 **$0.** Static hosting is free on GitHub Pages and Cloudflare Pages alike. Map
