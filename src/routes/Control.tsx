@@ -242,7 +242,7 @@ export default function Control() {
 
   /**
    * Seeds are committed rather than typed live: swapping one rebuilds a
-   * 1,319-entry permutation plus its repair pass, which is far too much work
+   * 1,318-entry permutation plus its repair pass, which is far too much work
    * to do on every keystroke.
    */
   const commitSeed = useCallback(

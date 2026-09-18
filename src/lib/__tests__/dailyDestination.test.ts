@@ -261,8 +261,8 @@ describe('seed sensitivity', () => {
     const base = runOfDays('2026-01-01', days)
     const other = runOfDays('2026-01-01', days, 'a-completely-different-secret')
     const differing = base.filter((d, i) => d.id !== other[i].id).length
-    // Collisions are legitimate — two independent permutations of 1,319 items
-    // will agree on about one day in 1,319 — so this is a high bar, not 100%.
+    // Collisions are legitimate — two independent permutations of 1,318 items
+    // will agree on about one day in 1,318 — so this is a high bar, not 100%.
     expect(differing / days).toBeGreaterThan(0.97)
   })
 
@@ -333,7 +333,7 @@ describe('itineraryFrom', () => {
  * `chosen = 0` as the fallback when every remaining candidate does. By the end
  * of an epoch the pool is nearly empty, so the fallback fires repeatedly and
  * the continent-spacing rule collapses for roughly the last week of every
- * 1,319-day epoch.
+ * 1,318-day epoch.
  *
  * The test below is written against the behaviour the product promises, not
  * the behaviour it currently has, so it fails until the draw is fixed.

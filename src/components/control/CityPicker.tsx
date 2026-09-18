@@ -1,5 +1,5 @@
 /**
- * Force one of the 1,319 destinations.
+ * Force one of the 1,318 destinations.
  *
  * The dataset is small enough to keep in memory and large enough that
  * rendering all of it on every keystroke is noticeable, so the search index
