@@ -61,8 +61,17 @@ export const MIN_HOP_DISTANCE_KM = 400
 /** Global multiplier on every dataset roaming radius. */
 export const ROAMING_RADIUS_SCALE = 1
 
-/** Profile picture. Drop your own file in `public/` and point this at it. */
-export const PROFILE_IMAGE_URL = './avatar.svg'
+/**
+ * Profile picture. Drop your own square image into `public/` and put its file
+ * name here — `me.jpg`, `avatar.png`, whatever. Nothing else needs changing.
+ */
+export const PROFILE_IMAGE_FILE = 'avatar.svg'
+
+/**
+ * Resolved against the deployment's base path, so the image still loads from a
+ * sub-path deployment such as a GitHub Pages project site.
+ */
+export const PROFILE_IMAGE_URL = `${import.meta.env.BASE_URL}${PROFILE_IMAGE_FILE}`
 
 /** Where the hidden control panel lives. */
 export const CONTROL_ROUTE = '/control'
