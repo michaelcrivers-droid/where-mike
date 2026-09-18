@@ -350,9 +350,12 @@ export function resolvePosition(plan: MovementPlan, minuteOfDay: number): LiveLo
   const point = clampToRoamArea(plan.area, lerpCoord(a, b, eased))
   const distanceKm = haversineKm(a, b)
   const durationMin = b.minute - a.minute
-  // Easing means instantaneous speed peaks in the middle of the leg.
+  // Easing means instantaneous speed peaks in the middle of the leg. The
+  // smoothstep t^2(3-2t) differentiates to 6t(1-t), which already peaks at
+  // 1.5x the average — multiplying by 1.5 again reported 2.25x and made the
+  // status card disagree with the marker.
   const averageSpeed = (distanceKm / durationMin) * 60
-  const instantaneous = averageSpeed * (1.5 * 6 * t * (1 - t)) || 0
+  const instantaneous = averageSpeed * 6 * t * (1 - t) || 0
 
   return {
     ...point,

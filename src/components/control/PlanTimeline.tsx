@@ -164,7 +164,7 @@ export default function PlanTimeline({
 
       {/* ---- the table ----------------------------------------------------- */}
       <div className={`${INSET} overflow-hidden`}>
-        <div className="wm-scroll max-h-72 overflow-y-auto">
+        <div className="wm-scroll max-h-72 overflow-auto">
           <table className="w-full border-collapse text-[12px]">
             <caption className="sr-only">
               Movement segments for {plan.dateKey} in {plan.destination.city}

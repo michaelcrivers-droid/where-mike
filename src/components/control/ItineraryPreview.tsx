@@ -49,7 +49,7 @@ export default function ItineraryPreview({
 }) {
   return (
     <div className={`${INSET} overflow-hidden`}>
-      <div className="wm-scroll max-h-[26rem] overflow-y-auto">
+      <div className="wm-scroll max-h-[26rem] overflow-auto">
         <table className="w-full border-collapse text-[12px]">
           <caption className="sr-only">
             Generated destinations for the {rows.length} days from {anchorDate}

@@ -49,8 +49,16 @@ export const NO_REPEAT_CITY_DAYS = 45
 /** Days within which the draw avoids reusing a country. */
 export const NO_REPEAT_COUNTRY_DAYS = 6
 
-/** Days within which the draw avoids reusing a continent. */
-export const NO_REPEAT_CONTINENT_DAYS = 2
+/**
+ * Days within which the draw avoids reusing a continent.
+ *
+ * 1 means "never the same continent two days running", which the scheduler in
+ * dailyDestination.ts guarantees outright rather than merely attempts. Raising
+ * it turns the rule back into a preference: with only six continents and Asia
+ * holding nearly 30% of the dataset, a gap of two is not always satisfiable,
+ * and the draw would quietly break it near the end of an epoch.
+ */
+export const NO_REPEAT_CONTINENT_DAYS = 1
 
 /**
  * Minimum great-circle distance, in km, between a day's destination and the

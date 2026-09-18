@@ -49,6 +49,26 @@ body {
   }
 }
 
+/*
+ * MapLibre ships plain, unlayered CSS, and in Tailwind v4 unlayered rules
+ * outrank anything inside `@layer utilities`. So `.maplibregl-map { position:
+ * relative }` silently beats an `absolute` utility on the map container,
+ * `inset-0` stops stretching anything, and the map collapses to a sliver.
+ * Re-asserting the intent at higher specificity fixes it regardless of the
+ * order the two stylesheets happen to load in.
+ */
+.maplibregl-map.absolute {
+  position: absolute;
+}
+
+.maplibregl-map.fixed {
+  position: fixed;
+}
+
+.maplibregl-map.inset-0 {
+  inset: 0;
+}
+
 /* The map owns the gestures; the page itself never scrolls sideways. */
 #root {
   overflow-x: hidden;

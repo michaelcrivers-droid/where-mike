@@ -1,0 +1,433 @@
+/*
+ * WhereMike — viewer variant "a": "Warm & native".
+ *
+ * Everything here is scoped under `.wma-root` so this file can never leak into
+ * another variant. Tailwind handles layout and type; this file owns the things
+ * Tailwind cannot express well: the token palette, the glass material, the
+ * marker, and a handful of slow, damped keyframes.
+ *
+ * The palette is warm neutral greys with a single accent — a soft terracotta.
+ * Dark mode is not an inversion: it is the same product at night, so the greys
+ * stay warm (brown-black rather than blue-black) and the accent warms up and
+ * brightens slightly so it still glows rather than smoulders.
+ */
+
+.wma-root {
+  /* Surfaces */
+  --wma-page: #ebe6e0;
+  --wma-glass: rgba(253, 251, 249, 0.8);
+  --wma-glass-strong: rgba(253, 251, 249, 0.96);
+
+  /* Ink */
+  --wma-ink: #1c1917;
+  --wma-ink-soft: rgba(28, 25, 23, 0.6);
+  --wma-ink-faint: rgba(28, 25, 23, 0.42);
+
+  /* Lines */
+  --wma-hairline: rgba(28, 25, 23, 0.08);
+  --wma-divider: rgba(28, 25, 23, 0.07);
+
+  /* The single warm accent. `-ink` is the text-safe darker cousin. */
+  --wma-accent: #d0632f;
+  --wma-accent-ink: #a34619;
+  --wma-accent-wash: rgba(208, 99, 47, 0.1);
+
+  /* Marker */
+  --wma-ring: #fffdfb;
+  --wma-ground: rgba(38, 22, 10, 0.24);
+
+  /* Layered shadows — one contact shadow, one lift, one ambient pool. */
+  --wma-shadow-1: 0 1px 2px rgba(41, 27, 18, 0.06);
+  --wma-shadow-2: 0 10px 28px -12px rgba(41, 27, 18, 0.24), 0 28px 56px -28px rgba(41, 27, 18, 0.3);
+  --wma-marker-shadow: 0 2px 4px rgba(41, 27, 18, 0.2), 0 10px 20px -6px rgba(41, 27, 18, 0.34);
+  --wma-scrim: rgba(28, 25, 23, 0.3);
+
+  position: relative;
+  width: 100%;
+  /* svh first so older iOS still fills; dvh wins where it is supported. */
+  height: 100svh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--wma-page);
+  color: var(--wma-ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  .wma-root {
+    --wma-page: #14110f;
+    /*
+     * Dark map tiles sit around #101215, so a "darker than the page" panel
+     * disappears into them. At night elevation has to read as *lighter*: this
+     * composites to roughly #332e29 over the map, which separates cleanly
+     * while still feeling like warm charcoal rather than grey plastic.
+     */
+    --wma-glass: rgba(58, 52, 46, 0.86);
+    --wma-glass-strong: rgba(54, 48, 43, 0.97);
+
+    --wma-ink: #f6f1ea;
+    --wma-ink-soft: rgba(246, 241, 234, 0.64);
+    --wma-ink-faint: rgba(246, 241, 234, 0.44);
+
+    --wma-hairline: rgba(255, 244, 232, 0.14);
+    --wma-divider: rgba(255, 244, 232, 0.11);
+
+    --wma-accent: #f08a52;
+    --wma-accent-ink: #f9ac7e;
+    --wma-accent-wash: rgba(240, 138, 82, 0.15);
+
+    --wma-ring: #f0e8df;
+    --wma-ground: rgba(0, 0, 0, 0.5);
+
+    --wma-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --wma-shadow-2: 0 10px 28px -12px rgba(0, 0, 0, 0.62), 0 28px 60px -28px rgba(0, 0, 0, 0.72);
+    --wma-marker-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 12px 24px -8px rgba(0, 0, 0, 0.6);
+    --wma-scrim: rgba(8, 6, 5, 0.5);
+  }
+}
+
+/* A focus ring that is legible on both glass and map. */
+.wma-root :focus-visible {
+  outline: 2px solid var(--wma-accent);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- material */
+
+.wma-glass {
+  background-color: var(--wma-glass);
+  -webkit-backdrop-filter: saturate(175%) blur(22px);
+  backdrop-filter: saturate(175%) blur(22px);
+  box-shadow:
+    inset 0 0 0 1px var(--wma-hairline),
+    var(--wma-shadow-1),
+    var(--wma-shadow-2);
+}
+
+/* Where the blur is unavailable the panel goes near-opaque instead of muddy. */
+@supports not ((-webkit-backdrop-filter: blur(2px)) or (backdrop-filter: blur(2px))) {
+  .wma-glass {
+    background-color: var(--wma-glass-strong);
+  }
+}
+
+.wma-press {
+  transition:
+    transform 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 240ms ease;
+}
+
+.wma-press:active {
+  transform: scale(0.94);
+}
+
+.wma-fade {
+  transition: opacity 620ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+ * Solid accent button. The background is the darker `-ink` accent so white
+ * text clears 4.5:1; at night the accent is the light one, so the text flips
+ * to near-black instead.
+ */
+.wma-cta {
+  background-color: var(--wma-accent-ink);
+  color: #fffdfb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .wma-cta {
+    color: #1b120c;
+  }
+}
+
+/* ------------------------------------------------------------------- sheet */
+
+/*
+ * The expanding half of the bottom sheet. Animating `grid-template-rows`
+ * between 0fr and 1fr gives a true height transition with no measuring, and
+ * the same property can be driven to a fraction mid-drag.
+ */
+.wma-sheet-details {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 520ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 320ms ease;
+}
+
+.wma-sheet-details[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.wma-sheet-details[data-dragging='true'] {
+  transition: none;
+}
+
+.wma-sheet-details > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wma-grab {
+  display: block;
+  height: 5px;
+  width: 38px;
+  border-radius: 9999px;
+  background-color: var(--wma-ink-faint);
+  opacity: 0.45;
+  transition:
+    opacity 240ms ease,
+    width 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.wma-handle:hover .wma-grab,
+.wma-handle:focus-visible .wma-grab {
+  opacity: 0.75;
+  width: 46px;
+}
+
+/* -------------------------------------------------------------- live blip */
+
+.wma-blip {
+  display: block;
+  height: 6px;
+  width: 6px;
+  border-radius: 9999px;
+  background-color: var(--wma-accent);
+  animation: wma-blip 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes wma-blip {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wma-accent) 46%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--wma-accent) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wma-accent) 0%, transparent);
+  }
+}
+
+/* ------------------------------------------------------------------ marker */
+
+.wma-marker {
+  --wma-halo: 120px;
+  --wma-heading: 0deg;
+  position: relative;
+  width: 56px;
+  height: 56px;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Accuracy halo. Sized from the reported accuracy at the current zoom. */
+.wma-marker__halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--wma-halo);
+  height: var(--wma-halo);
+  margin-top: calc(var(--wma-halo) / -2);
+  margin-left: calc(var(--wma-halo) / -2);
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--wma-accent) 20%, transparent) 0%,
+    color-mix(in srgb, var(--wma-accent) 12%, transparent) 78%,
+    color-mix(in srgb, var(--wma-accent) 14%, transparent) 100%
+  );
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wma-accent) 34%, transparent);
+  animation: wma-breathe 5.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes wma-breathe {
+  0% {
+    transform: scale(0.84);
+    opacity: 0.9;
+  }
+  55% {
+    transform: scale(1.06);
+    opacity: 0.34;
+  }
+  100% {
+    transform: scale(0.84);
+    opacity: 0.9;
+  }
+}
+
+/* Direction pip: a small arrow that orbits the ring instead of a beam cone. */
+.wma-marker__dir {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--wma-heading));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 760ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 420ms ease;
+}
+
+.wma-marker[data-heading='true'] .wma-marker__dir {
+  opacity: 1;
+}
+
+.wma-marker__pip {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  display: block;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 1px 2px rgba(20, 12, 6, 0.3));
+}
+
+.wma-marker__ground {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  width: 26px;
+  height: 7px;
+  margin-left: -13px;
+  border-radius: 9999px;
+  background-color: var(--wma-ground);
+  filter: blur(3.5px);
+  pointer-events: none;
+}
+
+.wma-marker__puck {
+  position: absolute;
+  inset: 3px;
+  padding: 3px;
+  border-radius: 9999px;
+  background-color: var(--wma-ring);
+  box-shadow:
+    var(--wma-marker-shadow),
+    0 0 0 1px color-mix(in srgb, var(--wma-accent) 50%, transparent);
+}
+
+.wma-marker__mono {
+  position: absolute;
+  inset: 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background-color: color-mix(in srgb, var(--wma-accent) 20%, var(--wma-ring));
+  color: var(--wma-accent-ink);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.wma-marker__photo {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  object-fit: cover;
+  background-color: color-mix(in srgb, var(--wma-accent) 12%, var(--wma-ring));
+}
+
+/* ------------------------------------------------------------ first paint */
+
+.wma-boot__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: var(--wma-accent-wash);
+  animation: wma-breathe 5.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.wma-boot__dot {
+  position: relative;
+  display: block;
+  height: 10px;
+  width: 10px;
+  border-radius: 9999px;
+  background-color: var(--wma-accent);
+  box-shadow: 0 2px 6px -1px color-mix(in srgb, var(--wma-accent) 55%, transparent);
+}
+
+/* ------------------------------------------------------------- transitions */
+
+@keyframes wma-rise {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes wma-soften {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.wma-rise {
+  animation: wma-rise 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.wma-soften {
+  animation: wma-soften 320ms ease both;
+}
+
+/* ------------------------------------------------ maplibre attribution skin */
+
+.wma-root .maplibregl-ctrl-top-right {
+  margin-top: calc(var(--safe-top) + 10px);
+  margin-right: calc(var(--safe-right) + 10px);
+}
+
+.wma-root .maplibregl-ctrl-attrib {
+  background: var(--wma-glass);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  backdrop-filter: saturate(160%) blur(14px);
+  box-shadow:
+    inset 0 0 0 1px var(--wma-hairline),
+    var(--wma-shadow-1);
+  border-radius: 13px;
+  color: var(--wma-ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 2px 9px;
+}
+
+.wma-root .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  padding-right: 26px;
+}
+
+.wma-root .maplibregl-ctrl-attrib a {
+  color: var(--wma-ink-soft);
+  text-decoration: none;
+}
+
+.wma-root .maplibregl-ctrl-attrib a:hover {
+  color: var(--wma-ink);
+  text-decoration: underline;
+}
+
+.wma-root .maplibregl-ctrl-attrib-button {
+  background-color: transparent;
+  border-radius: 9999px;
+}
+
+.wma-root .maplibregl-ctrl-attrib-button:focus,
+.wma-root .maplibregl-ctrl-attrib-button:focus-visible {
+  box-shadow: none;
+}
+
+/* The canvas never needs a scrollbar or a tap highlight. */
+.wma-root .maplibregl-canvas {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -11,10 +11,24 @@ export default defineConfig({
   // assets correctly, so CI sets VITE_BASE=/where-mike/ for an absolute base.
   base: process.env.VITE_BASE || './',
   plugins: [react(), tailwindcss()],
+  optimizeDeps: {
+    // MapLibre spins up a web worker to decode vector tiles. Running it
+    // through Vite's dependency pre-bundler breaks that worker in dev: the
+    // style, TileJSON and sprites all load, the canvas sizes correctly, and
+    // then no tile ever finishes — a blank map with nothing in the console,
+    // because the failure happens off the main thread. Serving the package's
+    // own ESM build keeps the worker intact.
+    exclude: ['maplibre-gl'],
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+  },
+  worker: {
+    // MapLibre asks for its worker with `{ type: 'module' }`, so the emitted
+    // worker bundle has to be an ES module too.
+    format: 'es',
   },
   build: {
     target: 'es2022',
