@@ -39,6 +39,11 @@ try {
   // any file or directory whose name starts with an underscore.
   writeFileSync(join(staging, '.nojekyll'), '')
 
+  // GitHub Pages has no rewrite rules, so an unknown path is a hard 404 and
+  // /control would never reach the app. Serving the same document as 404.html
+  // is the standard fix: the router reads the path and shows the right route.
+  cpSync(join(staging, 'index.html'), join(staging, '404.html'))
+
   // A fresh orphan branch: the deployed site is a snapshot, not a history.
   execFileSync('git', ['init', '-q', '-b', BRANCH], { cwd: staging, stdio: 'inherit' })
   execFileSync('git', ['add', '-A'], { cwd: staging, stdio: 'inherit' })

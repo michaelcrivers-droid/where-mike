@@ -352,8 +352,10 @@ mask, roaming radius and category are all computed for you.
 
 ## Control mode
 
-Open `/control` — or `#/control` on any host without URL rewriting. It is not
-linked from the viewer, and there is nothing to log into, because there is
+Open `/control` — or `#/control`, which is the better link to keep. Both work,
+but GitHub Pages serves unknown paths through `404.html`, so `/control` loads
+the app correctly while the document itself carries an HTTP 404 status. The
+hash form returns a clean 200. It is not linked from the viewer, and there is nothing to log into, because there is
 nothing to protect: every override lives in **this browser's localStorage** and
 is invisible to everyone else.
 
