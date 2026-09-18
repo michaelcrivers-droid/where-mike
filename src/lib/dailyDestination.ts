@@ -102,7 +102,16 @@ function conflicts(candidate: Destination, recent: Destination[]): boolean {
   for (let back = 1; back <= recent.length; back++) {
     const previous = recent[recent.length - back]
     if (back <= NO_REPEAT_CITY_DAYS && previous.id === candidate.id) return true
-    if (back <= NO_REPEAT_COUNTRY_DAYS && previous.countryCode === candidate.countryCode) return true
+    if (
+      back <= NO_REPEAT_COUNTRY_DAYS &&
+      // Compared by the name the status card renders, not the ISO code: French
+      // Guiana, Guadeloupe, Martinique and Réunion all have their own codes and
+      // all display as "France", so a code comparison lets the viewer read
+      // "France" twice inside a week.
+      previous.country === candidate.country
+    ) {
+      return true
+    }
     if (back === 1 && haversineKm(previous, candidate) < MIN_HOP_DISTANCE_KM) return true
   }
   return false
@@ -150,17 +159,33 @@ function scheduleEpoch(
 
   const result: number[] = new Array(order.length)
   const recent: Destination[] = context.map((i) => all[i])
-  let previousContinent: Continent | null =
-    recent.length > 0 ? recent[recent.length - 1].continent : null
+  // The last few continents, most recent last. Honouring more than one is
+  // what makes NO_REPEAT_CONTINENT_DAYS a setting rather than a decoration.
+  const recentContinents: Continent[] = recent
+    .slice(-NO_REPEAT_CONTINENT_DAYS)
+    .map((d) => d.continent)
   let remaining = order.length
 
   for (let i = 0; i < order.length; i++) {
-    // Sorted by name, never by Map iteration order, so the result is stable.
+    // Ordered by name, never by Map iteration order, so the result is stable.
+    // Plain code-unit comparison rather than localeCompare: localeCompare
+    // without an explicit locale follows the host's, and this ordering decides
+    // which continent the weighted draw lands on. A Swedish browser sorting
+    // differently would put its owner in a different city from everyone else,
+    // which is precisely the thing this app must never do.
     const available = [...queues.entries()]
       .filter(([, queue]) => queue.length > 0)
-      .sort((a, b) => a[0].localeCompare(b[0]))
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
 
-    const eligible = available.filter(([continent]) => continent !== previousContinent)
+    // Prefer a continent none of the recent days used. If the window is wide
+    // enough that nothing qualifies, fall back to merely avoiding yesterday,
+    // which is the guarantee we never give up.
+    const previousContinent = recentContinents[recentContinents.length - 1] ?? null
+    const wideEnough = available.filter(([c]) => !recentContinents.includes(c))
+    const eligible =
+      wideEnough.length > 0
+        ? wideEnough
+        : available.filter(([continent]) => continent !== previousContinent)
     // Holding more than half the remaining days means it can no longer be
     // kept apart from itself unless it goes now.
     const forced = eligible.find(([, queue]) => queue.length * 2 > remaining)
@@ -201,7 +226,8 @@ function scheduleEpoch(
     result[i] = index
     recent.push(all[index])
     if (recent.length > LOOKBACK) recent.shift()
-    previousContinent = all[index].continent
+    recentContinents.push(all[index].continent)
+    if (recentContinents.length > NO_REPEAT_CONTINENT_DAYS) recentContinents.shift()
     remaining--
   }
 

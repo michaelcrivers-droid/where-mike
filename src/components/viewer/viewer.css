@@ -20,8 +20,16 @@
 
   /* Ink */
   --wma-ink: #1c1917;
-  --wma-ink-soft: rgba(28, 25, 23, 0.6);
-  --wma-ink-faint: rgba(28, 25, 23, 0.42);
+  /*
+   * Both of these carry real text, including the line that says the app is
+   * fictional, so both have to clear WCAG AA's 4.5:1 against the glass they
+   * sit on. `faint` was 0.42, which composited to 2.64:1 in light and 3.59:1
+   * in dark — comfortably failing in the one place it most matters. The two
+   * steps are now 0.74 and 0.60, which keeps the hierarchy visible and puts
+   * the quieter of them at 4.54:1.
+   */
+  --wma-ink-soft: rgba(28, 25, 23, 0.74);
+  --wma-ink-faint: rgba(28, 25, 23, 0.6);
 
   /* Lines */
   --wma-hairline: rgba(28, 25, 23, 0.08);
@@ -65,8 +73,8 @@
     --wma-glass-strong: rgba(54, 48, 43, 0.97);
 
     --wma-ink: #f6f1ea;
-    --wma-ink-soft: rgba(246, 241, 234, 0.64);
-    --wma-ink-faint: rgba(246, 241, 234, 0.44);
+    --wma-ink-soft: rgba(246, 241, 234, 0.74);
+    --wma-ink-faint: rgba(246, 241, 234, 0.54);
 
     --wma-hairline: rgba(255, 244, 232, 0.14);
     --wma-divider: rgba(255, 244, 232, 0.11);
@@ -147,6 +155,25 @@
  * between 0fr and 1fr gives a true height transition with no measuring, and
  * the same property can be driven to a fraction mid-drag.
  */
+/*
+ * The sheet must never grow taller than the screen it sits on.
+ *
+ * Expanded, its content runs to roughly 470px. On a phone held landscape the
+ * viewport is around 430px tall, so the top of the sheet — and with it the
+ * grab handle, the only way to close it again — went off the top of the screen
+ * with nothing to scroll. Capping the height and letting the detail block
+ * scroll keeps the handle reachable at any size.
+ */
+.wma-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1.5rem);
+}
+
+.wma-sheet > .wma-sheet-details {
+  min-height: 0;
+}
+
 .wma-sheet-details {
   display: grid;
   grid-template-rows: 0fr;
@@ -168,6 +195,15 @@
 .wma-sheet-details > * {
   min-height: 0;
   overflow: hidden;
+}
+
+/*
+ * Scrollable only once open: during the 0fr -> 1fr transition the child has to
+ * stay `overflow: hidden` or the animation has nothing to clip against.
+ */
+.wma-sheet-details[data-open='true'] > * {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .wma-grab {

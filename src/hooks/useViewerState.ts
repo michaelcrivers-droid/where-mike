@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { ControlOverrides, ViewerState } from '@/types'
 import { resolveSimulation } from '@/lib/simulation'
@@ -13,7 +13,10 @@ import { TICK_INTERVAL_MS } from '@/config'
  * all.
  */
 function tickInterval(overrides: ControlOverrides): number {
-  if (overrides.timeOfDayOverride !== null) return 0
+  // A pinned time of day still needs a slow tick. The position is frozen by
+  // the override itself, but the calendar date is not: without a tick, a tab
+  // left open across midnight would keep resolving yesterday's city.
+  if (overrides.timeOfDayOverride !== null) return 60_000
   if (overrides.acceleratedDayMinutes > 0) {
     return Math.max(120, (overrides.acceleratedDayMinutes * 60_000) / 600)
   }
@@ -29,18 +32,12 @@ function tickInterval(overrides: ControlOverrides): number {
 export function useViewerState(overrides: ControlOverrides): ViewerState {
   const [now, setNow] = useState(() => new Date())
   const interval = tickInterval(overrides)
-  const frozen = useRef(now)
 
   useEffect(() => {
-    if (interval <= 0) return
     setNow(new Date())
     const id = window.setInterval(() => setNow(new Date()), interval)
     return () => window.clearInterval(id)
   }, [interval])
 
-  // Pinning the time of day should not leave the state stuck on whatever
-  // instant the last timer tick happened to fire at.
-  const instant = interval > 0 ? now : frozen.current
-
-  return useMemo(() => resolveSimulation(instant, overrides), [instant, overrides])
+  return useMemo(() => resolveSimulation(now, overrides), [now, overrides])
 }

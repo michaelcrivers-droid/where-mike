@@ -67,10 +67,17 @@ export default function Viewer() {
 
   return (
     <div className="wma-root">
+      {/*
+        * `inert` while the dialog is up: without it the map, its attribution
+        * links and every control behind the scrim stay focusable and stay in
+        * the accessibility tree, so a screen reader wanders straight out of
+        * the dialog into content it is meant to be covering.
+        */}
       <div
         ref={containerRef}
         className="wma-fade absolute inset-0"
         style={{ opacity: ready ? 1 : 0 }}
+        inert={aboutOpen}
       />
 
       {/* Calm first paint, cross-faded out once the style and first tiles land. */}
@@ -96,6 +103,7 @@ export default function Viewer() {
       {overrides.debug ? <DebugOverlay state={state} /> : null}
 
       <div
+        inert={aboutOpen}
         className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 pr-[calc(var(--safe-right)_+_0.75rem)] pb-[calc(var(--safe-bottom)_+_0.75rem)] pl-[calc(var(--safe-left)_+_0.75rem)] md:flex-row-reverse md:items-end md:justify-between md:gap-4 md:pr-[calc(var(--safe-right)_+_1.25rem)] md:pb-[calc(var(--safe-bottom)_+_1.25rem)] md:pl-[calc(var(--safe-left)_+_1.25rem)]"
       >
         <MapControls

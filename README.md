@@ -187,10 +187,24 @@ control panel's radius multiplier is clamped to it. Without that clamp, setting
 the bay. Paris has room to reach 21 km; Shenzhen and Malé have none at all, and
 their ceiling is simply their default radius.
 
-This is verified rather than asserted. `src/lib/exhaustive.test.ts` samples
-**every destination × every mode × four dates × every three minutes** — about
-10.1 million positions — and checks each one is inside both the radius and a
-verified-land sector.
+This is verified rather than asserted, and verified twice over — because the
+obvious test is circular.
+
+`exhaustive.test.ts` samples destinations across every mode, four dates and
+every three minutes, and checks each position sits inside the radius and a
+land sector. That is worth having, but it can only prove the engine *respects*
+the mask: if the mask itself were wrong, every assertion would still pass,
+because the positions and the assertions both derive from it.
+
+So `landTruth.test.ts` throws the mask away and asks the source geometry
+directly — is this exact coordinate on dry land, per the Natural Earth
+polygons? Nothing the engine believes is taken on trust. It is the test that
+matters, and it caught real water positions in Split and Vladivostok that the
+mask-based sweep had been passing for millions of samples.
+
+Both take a sample by default and run the whole dataset under `WM_FULL=1`.
+`landTruth` needs the 15MB polygon cache (`npm run data:build` populates it)
+and skips rather than fails without it.
 
 ---
 
@@ -430,25 +444,62 @@ scripts/
   geo-mask.mjs             Natural Earth point-in-polygon land oracle
   deploy.mjs               publishes dist/ to gh-pages
 src/
-  components/              viewer UI and the control panel's parts
-  data/                    the destination table and its typed parser
-  hooks/                   useViewerState, useOverrides
-  lib/                     the engine, and its tests
-    seededRandom.ts        deterministic PRNG
-    dailyDestination.ts    the daily draw
+  components/
+    viewer/                the public screen: map, marker, status sheet,
+                           controls, about dialog, debug overlay
+    control/               the developer panel's parts
+    LoadingScreen.tsx      first paint
+    RouteBoundary.tsx      recovery when a route chunk fails to load
+  data/
+    destinations.ts        typed parser
+    destinations.generated.ts   the table itself (generated)
+  hooks/
+    useViewerState.ts      the clock, and one ViewerState per tick
+    useOverrides.ts        the local override store
+  lib/
+    seededRandom.ts        deterministic PRNG (xmur3 + mulberry32)
+    dailyDestination.ts    the daily draw: epoch permutation + continent scheduler
     movementEngine.ts      route planning and interpolation
     geoUtils.ts            spherical geometry and the land-sector logic
     timeUtils.ts           calendars, zones and clocks
     simulation.ts          ties it together into one ViewerState
     overrides.ts           localStorage + URL parameter layer
     mapStyle.ts            tile provider (swap here)
+    mapRuntime.ts          MapLibre worker wiring
     router.ts              two routes, hand-rolled
-  routes/                  Viewer and Control
-  types/                   shared domain types
+    __tests__/             the suite, including the land-safety sweeps
+  routes/
+    Viewer.tsx             public route
+    Control.tsx            hidden developer route
+  types/index.ts           shared domain types
   config.ts                everything you are likely to want to change
 ```
 
----
+## Testing
+
+```bash
+npm test                                           # the whole suite
+WM_FULL=1 npx vitest run src/lib/__tests__/exhaustive.test.ts   # the full land sweep
+```
+
+293 tests. The ones that matter most:
+
+- **`exhaustive.test.ts`** walks every third destination × every mode × four
+  dates × every three minutes and checks each position is inside both the
+  radius and a verified-land sector. `WM_FULL=1` runs all 1,319 cities — about
+  ten million sampled positions.
+- **`radius.test.ts`** does the same with the roaming multiplier at 0.25x
+  through 4x, against the verified ceiling.
+- **`landSafety.test.ts`**, **`dailyDestination.test.ts`** and
+  **`movementEngine.test.ts`** cover determinism, the spacing rules, plan
+  shape, interpolation continuity and speed ceilings.
+- **`dataset.test.ts`** checks the generated table itself: unique ids, valid
+  coordinates, timezones `Intl` actually accepts, and no single country above
+  a sane share of the list.
+
+The suite has earned its keep — it found a doubled easing factor that made the
+status card report 2.25x the real speed, a continent rule that broke at the end
+of every epoch, and a `NaN` that produced an undefined city.
 
 ## Licence and attribution
 

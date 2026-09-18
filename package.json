@@ -13,7 +13,7 @@
     "lint": "oxlint",
     "data:build": "node scripts/build-destinations.mjs",
     "deploy": "npm run build:pages && node scripts/deploy.mjs",
-    "build:pages": "VITE_BASE=/where-mike/ npm run build"
+    "build:pages": "VITE_BASE=\"$(node scripts/pages-base.mjs)\" npm run build"
   },
   "dependencies": {
     "maplibre-gl": "^6.10.0",

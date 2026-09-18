@@ -9,7 +9,11 @@
 
 import type { MovementMode } from './types'
 
-/** Product name. Change this and the browser tab, header and README follow. */
+/**
+ * Product name. Drives the browser tab, the about dialog and the control
+ * panel's header. The tile provider lives in `src/lib/mapStyle.ts`; swapping
+ * it is a one-file change.
+ */
 export const APP_NAME = 'WhereMike'
 
 /** The name on the status card. */
@@ -86,13 +90,6 @@ export const CONTROL_ROUTE = '/control'
 
 /** localStorage key holding the dev overrides. */
 export const OVERRIDES_STORAGE_KEY = 'wheremike.overrides.v1'
-
-/**
- * Map style. Free, key-less, community-hosted raster tiles from OpenFreeMap's
- * sibling project. See `src/lib/mapStyle.ts` for the actual style document —
- * swapping providers is a one-file change.
- */
-export const MAP_ATTRIBUTION = '© OpenStreetMap contributors'
 
 /** Camera zoom when the viewer opens. Neighbourhood scale. */
 export const INITIAL_ZOOM = 14.2

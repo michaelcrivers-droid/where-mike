@@ -159,7 +159,11 @@ export function hoursAheadOfViewer(date: Date, timeZone: string): number {
   const hereMs = Date.UTC(
     date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(),
   )
-  return Math.round((thereMs - hereMs) / 3_600_000)
+  // Rounded away from zero rather than with Math.round, which breaks ties
+  // towards +Infinity and would report a +5:30 zone as 6 hours ahead while
+  // calling -5:30 five hours behind.
+  const hours = (thereMs - hereMs) / 3_600_000
+  return Math.sign(hours) * Math.round(Math.abs(hours))
 }
 
 /** A friendly bucket for the destination's local time, used in copy. */

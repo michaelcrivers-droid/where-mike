@@ -199,8 +199,15 @@ export function pointInRoamArea(
 
 /** True when a point lies inside the wedge, both in range and in bearing. */
 export function isInRoamArea(area: RoamArea, point: Coord, marginDeg = 0): boolean {
-  if (haversineKm(area.centre, point) > area.radiusKm) return false
+  const distance = haversineKm(area.centre, point)
+  if (distance > area.radiusKm) return false
   if (area.span >= 360 - 1e-6) return true
+  // Within a few metres of the centre the bearing is numerical noise, and the
+  // centre is verified land in any case. Without this, a stop drawn almost
+  // exactly on the centre can be judged out of the wedge, every candidate for
+  // the day gets rejected in turn, and the plan collapses to twenty-four hours
+  // of standing still.
+  if (distance < 0.02) return true
   const offset = normaliseBearing(bearingBetween(area.centre, point) - area.from)
   return offset <= area.span + marginDeg
 }
@@ -213,8 +220,12 @@ export function isInRoamArea(area: RoamArea, point: Coord, marginDeg = 0): boole
  * missing slice cuts straight through it — which for a city like Melbourne
  * means walking across the bay. Sampling the chord catches that.
  */
-export function legStaysOnLand(area: RoamArea, a: Coord, b: Coord, samples = 12): boolean {
+export function legStaysOnLand(area: RoamArea, a: Coord, b: Coord): boolean {
   if (area.span >= 360 - 1e-6) return true
+  // Sampled by distance rather than a fixed count: a leg that clips the
+  // excluded slice does so over a short arc, and a fixed twelve samples steps
+  // straight over it on anything longer than a kilometre or two.
+  const samples = Math.max(16, Math.min(320, Math.ceil(haversineKm(a, b) / 0.08)))
   for (let i = 0; i <= samples; i++) {
     if (!isInRoamArea(area, lerpCoord(a, b, i / samples))) return false
   }

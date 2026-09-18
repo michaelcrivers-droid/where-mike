@@ -104,7 +104,7 @@ export default function StatusSheet(props: StatusSheetProps) {
     <section
       ref={sheetRef}
       aria-label={`Where ${displayName} is`}
-      className="wma-glass wma-rise pointer-events-auto w-full overflow-hidden rounded-[24px] md:w-[368px] md:shrink-0"
+      className="wma-sheet wma-glass wma-rise pointer-events-auto w-full overflow-hidden rounded-[24px] md:w-[368px] md:shrink-0"
     >
       <button
         type="button"
@@ -161,9 +161,31 @@ export default function StatusSheet(props: StatusSheetProps) {
             </span>
           </p>
         </div>
+
+        {/*
+          * Permanent, not tucked behind the info button.
+          *
+          * Everything else on the collapsed card — a name, a live dot, a local
+          * clock, a city — reads exactly like a real location share, and
+          * someone who is simply sent the link has no reason to open a dialog
+          * or drag a sheet. One quiet line is the difference between a joke
+          * and a thing that misleads people.
+          */}
+        <p className="mt-2 text-[11px] leading-tight text-[var(--wma-ink-faint)]">
+          Made up. {displayName} is not really here.
+        </p>
       </div>
 
-      <div id="wma-sheet-details" ref={detailsRef} className="wma-sheet-details" data-open={open ? 'true' : 'false'}>
+      <div
+        id="wma-sheet-details"
+        ref={detailsRef}
+        className="wma-sheet-details"
+        data-open={open ? 'true' : 'false'}
+        // Collapsed content is hidden by a grid-row transition rather than
+        // `display`, so without this it stays in the accessibility tree and the
+        // tab order while `aria-expanded` reports false.
+        inert={!open}
+      >
         <div>
           <dl className="mt-3.5 px-5">
             <Row label="Time there" value={timeOfDayLabel(live.localMinuteOfDay)} note={weekdayFrom(dateKey)} />

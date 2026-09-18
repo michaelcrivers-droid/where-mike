@@ -42,10 +42,23 @@ export default function AboutDialog({ open, city, displayName, onClose }: AboutD
       if (nodes.length === 0) return
       const first = nodes[0]
       const last = nodes[nodes.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
+      const active = document.activeElement as HTMLElement | null
+
+      // The panel itself is focused when the dialog opens, and it carries
+      // tabIndex={-1}, so it matches none of the selectors above. Comparing
+      // only against `first` and `last` therefore missed it, and the very
+      // first Shift+Tab walked straight out of the dialog and into the map
+      // behind it.
+      const inside = active !== null && panel.contains(active) && active !== panel
+      if (!inside) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+      if (event.shiftKey && active === first) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && active === last) {
         event.preventDefault()
         first.focus()
       }

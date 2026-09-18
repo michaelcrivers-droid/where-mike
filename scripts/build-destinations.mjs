@@ -39,8 +39,16 @@ const MIN_POPULATION = 40_000
 const SECTORS = 16
 /** A destination needs at least this many dry sectors to be usable. */
 const MIN_LAND_SECTORS = 5
-/** Never shrink a roaming radius below this. */
-const MIN_RADIUS_KM = 1.4
+/** ...and at least this many of them contiguous, since a day uses one wedge. */
+const MIN_LAND_RUN = 3
+/**
+ * Never shrink a roaming radius below this.
+ *
+ * Low enough that a narrow island still gets a usable wedge: Key West, Da Nang
+ * and Kochi are all real destinations that a 1.4km floor simply could not fit
+ * three dry sectors into, and a small honest wander beats dropping them.
+ */
+const MIN_RADIUS_KM = 0.6
 const MAX_RADIUS_KM = 9
 /**
  * The furthest the control panel's radius multiplier is ever allowed to push
@@ -107,45 +115,111 @@ function baseRadiusKm(category, pop) {
 }
 
 /**
- * Bitmask of compass sectors whose full depth is dry land. A sector counts
- * only when three sample points along it — near, mid and the rim — are all
- * on land and outside any mapped lake.
+ * How finely each sector is swept, in kilometres.
+ *
+ * Sampling at fixed fractions of the radius was the mistake here: the absolute
+ * gaps then grow with the radius, and a harbour that fits between two probes
+ * passes as dry land. Split and Vladivostok both did exactly that — the marker
+ * sat in the water two kilometres from the centre while every mask-based
+ * assertion in the suite stayed green, because those assertions were checking
+ * the engine against the very mask that was wrong.
+ *
+ * Spacing in kilometres keeps the resolution constant instead: the number of
+ * rings scales with the radius and the number of bearings per ring scales with
+ * the arc length, so the whole wedge is covered at roughly this granularity
+ * however large it is.
  */
-function landSectorMask(oracle, lat, lng, radiusKm, fractions = [0.45, 0.75, 1]) {
+const PROBE_SPACING_KM = 0.18
+
+/**
+ * Bitmask of compass sectors that are dry land throughout — swept across the
+ * sector's whole width and down the whole depth of the radius, lakes included.
+ */
+function landSectorMask(oracle, lat, lng, radiusKm) {
   let mask = 0
   let count = 0
+  const rings = Math.max(4, Math.ceil(radiusKm / PROBE_SPACING_KM))
+  const sectorDeg = 360 / SECTORS
+  const sectorRadians = (sectorDeg * Math.PI) / 180
+
   for (let s = 0; s < SECTORS; s++) {
-    const bearing = (s * 360) / SECTORS
+    const base = s * sectorDeg
     let ok = true
-    for (const frac of fractions) {
-      const [plat, plng] = project(lat, lng, radiusKm * frac, bearing)
-      if (!oracle.isLand(plat, plng)) { ok = false; break }
+    sweep: for (let ring = 1; ring <= rings; ring++) {
+      const distance = (radiusKm * ring) / rings
+      const steps = Math.max(2, Math.ceil((sectorRadians * distance) / PROBE_SPACING_KM))
+      for (let i = 0; i <= steps; i++) {
+        const [plat, plng] = project(lat, lng, distance, base + (sectorDeg * i) / steps)
+        if (!oracle.isLand(plat, plng)) {
+          ok = false
+          break sweep
+        }
+      }
     }
-    if (ok) { mask |= 1 << s; count++ }
+    if (ok) {
+      mask |= 1 << s
+      count++
+    }
   }
   return { mask, count }
 }
 
-/** True when the city centre, or somewhere within ~1km of it, is on land. */
+/**
+ * True when the city centre itself is on land.
+ *
+ * This used to accept a centre that was in open water as long as somewhere a
+ * kilometre away was dry, which let five destinations ship with a wet centre
+ * coordinate. That coordinate is not incidental: it is the origin every
+ * position is projected from, and the point the movement engine clusters
+ * stops around. A city whose published centroid is in the sea is a city this
+ * app should simply not visit.
+ */
 function centreIsLand(oracle, lat, lng) {
-  if (oracle.isLand(lat, lng)) return true
-  for (let s = 0; s < 8; s++) {
-    const [plat, plng] = project(lat, lng, 1, s * 45)
-    if (oracle.isLand(plat, plng)) return true
+  return oracle.isLand(lat, lng)
+}
+
+/**
+ * Nudge a centre that landed in water onto the nearest dry ground.
+ *
+ * Some published centroids sit just offshore — Copenhagen's falls in the
+ * harbour, Geneva's in the lake — and simply dropping those cities would be a
+ * poor trade for a rounding error in the source data. The centre is instead
+ * walked outwards in rings until it finds land, which moves it by a few
+ * hundred metres in a city the marker roams several kilometres across anyway.
+ *
+ * Returns null when nothing dry is within reach, in which case the
+ * destination really is unusable.
+ */
+function findLandCentre(oracle, lat, lng) {
+  if (oracle.isLand(lat, lng)) return { lat, lng, movedKm: 0 }
+  // Capped deliberately: a nudge is meant to correct a centroid that fell
+  // just offshore, not to relocate a place. Gibraltar needs 2.3km, which would
+  // put the marker in Spain under a Gibraltar label, so it is dropped instead.
+  for (const km of [0.25, 0.5, 0.8, 1.2]) {
+    for (let i = 0; i < 24; i++) {
+      const [plat, plng] = project(lat, lng, km, (i * 360) / 24)
+      if (oracle.isLand(plat, plng)) return { lat: plat, lng: plng, movedKm: km }
+    }
   }
-  return false
+  return null
 }
 
 /** Shrink the radius until enough of the compass rose is dry, or give up. */
 function fitRadius(oracle, lat, lng, startKm) {
-  for (const scale of [1, 0.78, 0.6, 0.45, 0.32]) {
+  // The runtime confines a day to the longest *contiguous* run, so that is
+  // what has to be big enough — a destination with five dry sectors scattered
+  // around the compass has nowhere usable to walk.
+  const usable = (mask) => longestRun(mask).length >= MIN_LAND_RUN
+  for (const scale of [1, 0.78, 0.6, 0.45, 0.32, 0.22, 0.15]) {
     const km = Math.max(MIN_RADIUS_KM, Number((startKm * scale).toFixed(2)))
     const { mask, count } = landSectorMask(oracle, lat, lng, km)
-    if (count >= MIN_LAND_SECTORS) return { km, mask, count }
+    if (count >= MIN_LAND_SECTORS && usable(mask)) return { km, mask, count }
     if (km === MIN_RADIUS_KM) break
   }
   const floor = landSectorMask(oracle, lat, lng, MIN_RADIUS_KM)
-  return floor.count >= 3 ? { km: MIN_RADIUS_KM, ...floor } : null
+  return floor.count >= MIN_LAND_RUN && usable(floor.mask)
+    ? { km: MIN_RADIUS_KM, ...floor }
+    : null
 }
 
 /** The longest circular run of set sectors, mirroring the runtime helper. */
@@ -184,10 +258,9 @@ function runToMask(run) {
 function maxSafeRadiusKm(oracle, lat, lng, baseKm, mask) {
   const wedge = runToMask(longestRun(mask))
   if (wedge === 0) return baseKm
-  const dense = [0.25, 0.4, 0.55, 0.7, 0.85, 1]
   let best = baseKm
   for (let km = baseKm * 1.25; km <= MAX_EXPANDED_RADIUS_KM; km *= 1.25) {
-    const probe = landSectorMask(oracle, lat, lng, km, dense)
+    const probe = landSectorMask(oracle, lat, lng, km)
     if ((probe.mask & wedge) !== wedge) break
     best = Number(km.toFixed(2))
   }
@@ -253,6 +326,7 @@ async function main() {
   //    whenever a candidate turns out to be mostly water.
   const destinations = []
   const rejected = []
+  const nudged = []
   const usedIds = new Set()
 
   for (const [iso2, candidates] of [...byCountry.entries()].sort()) {
@@ -260,20 +334,24 @@ async function main() {
     let taken = 0
     for (const { key, city, pop, must } of candidates) {
       if (taken >= quota && !must) break
-      if (!centreIsLand(oracle, city.lat, city.lng)) {
-        rejected.push(`${key} (centre not on land)`)
+      const centre = findLandCentre(oracle, city.lat, city.lng)
+      if (!centre) {
+        rejected.push(`${key} (no land within 1.2km of the centre)`)
         continue
       }
+      if (centre.movedKm > 0) {
+        nudged.push(`${key} (+${centre.movedKm}km to reach land)`)
+      }
       // A city is "coastal" when the sea is within ~3.5km of the middle of it.
-      const coastal = landSectorMask(oracle, city.lat, city.lng, 3.5).count < SECTORS
+      const coastal = landSectorMask(oracle, centre.lat, centre.lng, 3.5).count < SECTORS
       const category = pickCategory(key, city, pop, coastal)
-      const fitted = fitRadius(oracle, city.lat, city.lng, baseRadiusKm(category, pop))
+      const fitted = fitRadius(oracle, centre.lat, centre.lng, baseRadiusKm(category, pop))
       if (!fitted) {
         rejected.push(`${key} (no safe roaming radius)`)
         continue
       }
 
-      const maxRadius = maxSafeRadiusKm(oracle, city.lat, city.lng, fitted.km, fitted.mask)
+      const maxRadius = maxSafeRadiusKm(oracle, centre.lat, centre.lng, fitted.km, fitted.mask)
 
       let id = `${iso2.toLowerCase()}-${slug(city.city)}`
       if (usedIds.has(id)) {
@@ -290,8 +368,8 @@ async function main() {
         country: sanitise(COUNTRY_DISPLAY_NAME[city.country] ?? city.country),
         countryCode: iso2,
         continent: CONTINENT_BY_ISO2[iso2],
-        latitude: Number(city.lat.toFixed(4)),
-        longitude: Number(city.lng.toFixed(4)),
+        latitude: Number(centre.lat.toFixed(4)),
+        longitude: Number(centre.lng.toFixed(4)),
         timezone: city.timezone,
         safeRoamingRadiusKm: fitted.km,
         maxRoamingRadiusKm: maxRadius,
@@ -335,9 +413,10 @@ ${banner}
 // Each row is:
 //   id|city|region|country|countryCode|continent|lat|lng|timezone|radiusKm|category|landSectors|maxRadiusKm
 //
-// landSectors is a 16-bit mask. Bit N is set when the compass sector
-// starting at N * 22.5 degrees is dry land all the way out to the roaming
-// radius, checked against Natural Earth 10m land and lake polygons at build
+// landSectors is a 16-bit mask. Bit N is set when the compass sector starting
+// at N * 22.5 degrees is dry land throughout — swept across the sector's full
+// width and down the full depth of the roaming radius, including the inner
+// disc, and checked against Natural Earth 10m land and lake polygons at build
 // time. The roaming engine only ever places the marker inside a set bit,
 // which is what stops it turning up in the sea.
 //
@@ -373,6 +452,8 @@ export const DESTINATION_COUNT = ${destinations.length}
   console.log(`ISO 3166-1 codes (includes territories): ${isoCodes.size}`)
   console.log(`Rejected for land safety: ${rejected.length}`)
   if (rejected.length) console.log('  ' + rejected.slice(0, 25).join('\n  '))
+  console.log(`Centres nudged onto land: ${nudged.length}`)
+  if (nudged.length) console.log('  ' + nudged.slice(0, 25).join('\n  '))
 }
 
 main().catch((err) => {

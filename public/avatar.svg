@@ -2,8 +2,10 @@
   Placeholder profile photo.
 
   Replace this file with your own image — any square PNG or JPG works. Drop it
-  in `public/` and point PROFILE_IMAGE_URL in src/config.ts at it, e.g.
-  './me.jpg'. The marker crops to a circle, so anything square looks right.
+  in `public/` and set PROFILE_IMAGE_FILE in src/config.ts to its file name,
+  e.g. 'me.jpg'. (PROFILE_IMAGE_URL next to it is derived from that plus the
+  deployment's base path; editing it by hand breaks sub-path deployments.)
+  The marker crops to a circle, so anything square looks right.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Profile placeholder">
   <defs>

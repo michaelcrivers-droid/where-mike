@@ -163,15 +163,27 @@ export function createMovementPlan(options: PlanOptions): MovementPlan {
   // first time; around a bay it quietly rejects the crossings.
   const targets: Coord[] = []
   const plannedTrips = rng.int(profile.trips[0], profile.trips[1])
+  /*
+   * A stop has to be far enough from the last one to be worth calling a trip.
+   * Points are drawn with a bias towards the middle of town, and on an unlucky
+   * run every draw lands within a few metres of the previous one — giving a
+   * day that technically has six outings and covers twenty metres. Requiring
+   * real separation, and re-drawing when it is not there, keeps the day
+   * looking like a day.
+   */
+  const minSeparationKm = Math.max(0.12, area.radiusKm * 0.14)
   for (let i = 0; i < plannedTrips; i++) {
     const from = targets.length > 0 ? targets[targets.length - 1] : home
     let accepted: Coord | null = null
-    for (let attempt = 0; attempt < 12 && !accepted; attempt++) {
+    let fallback: Coord | null = null
+    for (let attempt = 0; attempt < 14 && !accepted; attempt++) {
       const candidate = pointInRoamArea(area, rng, profile.maxFraction, profile.centreBias)
-      if (legStaysOnLand(area, from, candidate) && legStaysOnLand(area, candidate, home)) {
-        accepted = candidate
-      }
+      if (!legStaysOnLand(area, from, candidate) || !legStaysOnLand(area, candidate, home)) continue
+      // Safe, but possibly too close; keep it in case nothing better turns up.
+      fallback ??= candidate
+      if (haversineKm(from, candidate) >= minSeparationKm) accepted = candidate
     }
+    accepted ??= fallback
     // Nowhere reachable without crossing water: end the day's plan here.
     if (!accepted) break
     targets.push(accepted)
@@ -207,7 +219,17 @@ export function createMovementPlan(options: PlanOptions): MovementPlan {
   const rawTotal = rawDwells.reduce((sum, m) => sum + m, 0)
   const available = homeBy - wake - travelTotal
   const scale = rawTotal > 0 ? Math.min(2.2, Math.max(0.35, available / rawTotal)) : 1
-  const dwells = rawDwells.map((m) => Math.max(MIN_DWELL, Math.round(m * scale)))
+  // Drawn against a running budget, so the stops can never collectively
+  // overrun the day. Scaling alone did not guarantee that: the per-stop floor
+  // could push the total past what was left, the last leg got clamped at
+  // midnight, and the walk home turned into a sprint.
+  let dwellBudget = available
+  const dwells = rawDwells.map((m) => {
+    const want = Math.max(MIN_DWELL, Math.round(m * scale))
+    const take = Math.max(0, Math.min(want, dwellBudget))
+    dwellBudget -= take
+    return take
+  })
 
   const waypoints: Waypoint[] = [
     { minute: 0, ...home, dwell: true, label: homeLabel },
@@ -321,48 +343,113 @@ function stationaryDrift(base: Coord, minute: number, phase: number): Coord {
   return project(base, km, bearing)
 }
 
-/** Where the person is at `minuteOfDay`, plus what the status card should say. */
-export function resolvePosition(plan: MovementPlan, minuteOfDay: number): LiveLocation {
-  const minute = Math.max(0, Math.min(MINUTES_PER_DAY - 0.0001, minuteOfDay))
+interface Placement {
+  coord: Coord
+  moving: boolean
+  phase: number
+}
+
+/**
+ * Where the person is at a given minute — coordinate only.
+ *
+ * The easing runs across a whole journey, from one stop to the next, rather
+ * than across each waypoint pair. A leg is often split by a bend waypoint, and
+ * easing each half separately meant the marker decelerated to a complete stop
+ * in the middle of the street and then set off again.
+ */
+function placementAt(plan: MovementPlan, minute: number): Placement {
   const { waypoints } = plan
-  const i = segmentIndexAt(waypoints, minute)
-  const a = waypoints[i]
-  const b = waypoints[Math.min(i + 1, waypoints.length - 1)]
-  const phase = hashString(`${plan.dateKey}|${plan.destination.id}|${i}`) % 1000
+  const index = segmentIndexAt(waypoints, minute)
+  const a = waypoints[index]
+  const b = waypoints[Math.min(index + 1, waypoints.length - 1)]
+  const phase = hashString(`${plan.dateKey}|${plan.destination.id}|${index}`) % 1000
 
   if (a.dwell || b.minute <= a.minute) {
-    // Clamping is belt and braces: a few metres of drift at a waypoint that
-    // sits right on a sector boundary could otherwise nudge it over the line.
-    const drifted = clampToRoamArea(plan.area, stationaryDrift(a, minute, phase))
     return {
-      ...drifted,
-      heading: null,
+      // Clamping is belt and braces: a few metres of drift at a waypoint on a
+      // sector boundary could otherwise nudge it over the line.
+      coord: clampToRoamArea(plan.area, stationaryDrift(a, minute, phase)),
       moving: false,
-      accuracyMeters: 9 + 5 * (0.5 + 0.5 * Math.sin(minute * 0.21 + phase)),
-      speedKmh: 0,
-      statusLabel: 'Now',
-      localMinuteOfDay: minute,
+      phase,
     }
   }
 
-  const t = (minute - a.minute) / (b.minute - a.minute)
-  const eased = easeInOut(t)
-  const point = clampToRoamArea(plan.area, lerpCoord(a, b, eased))
-  const distanceKm = haversineKm(a, b)
-  const durationMin = b.minute - a.minute
-  // Easing means instantaneous speed peaks in the middle of the leg. The
-  // smoothstep t^2(3-2t) differentiates to 6t(1-t), which already peaks at
-  // 1.5x the average — multiplying by 1.5 again reported 2.25x and made the
-  // status card disagree with the marker.
-  const averageSpeed = (distanceKm / durationMin) * 60
-  const instantaneous = averageSpeed * 6 * t * (1 - t) || 0
+  // Walk out to the ends of this journey: back to the stop we left, forward to
+  // the stop we are heading for.
+  let first = index
+  while (first > 0 && !waypoints[first - 1].dwell) first--
+  let last = index + 1
+  while (last < waypoints.length - 1 && !waypoints[last].dwell) last++
+
+  const from = waypoints[first].minute
+  const to = waypoints[last].minute
+  const progress = to > from ? easeInOut((minute - from) / (to - from)) : 1
+
+  /*
+   * Parameterised by distance along the journey, not by the clock.
+   *
+   * A leg is often split by a bend waypoint whose timestamp does not fall
+   * where the distance does. Interpolating on time then makes the marker
+   * hurry along one half and dawdle along the other, with a visible change of
+   * pace as it passes the bend. Walking the eased fraction of the total
+   * distance instead gives one even journey, and the speed curve comes out as
+   * the easing intends: zero at both stops, peaking halfway between them.
+   */
+  const spans: number[] = []
+  let total = 0
+  for (let k = first; k < last; k++) {
+    const span = haversineKm(waypoints[k], waypoints[k + 1])
+    spans.push(span)
+    total += span
+  }
+
+  let coord: Coord = waypoints[last]
+  if (total > 0) {
+    let travelled = progress * total
+    for (let k = 0; k < spans.length; k++) {
+      if (travelled <= spans[k] || k === spans.length - 1) {
+        const local = spans[k] > 0 ? Math.min(1, Math.max(0, travelled / spans[k])) : 0
+        coord = lerpCoord(waypoints[first + k], waypoints[first + k + 1], local)
+        break
+      }
+      travelled -= spans[k]
+    }
+  }
+
+  return { coord: clampToRoamArea(plan.area, coord), moving: true, phase }
+}
+
+/** How far ahead to look when measuring speed and heading, in minutes. */
+const MOTION_PROBE_MINUTES = 0.05
+
+/** Where the person is at `minuteOfDay`, plus what the status card should say. */
+export function resolvePosition(plan: MovementPlan, minuteOfDay: number): LiveLocation {
+  const minute = Math.max(0, Math.min(MINUTES_PER_DAY - 0.0001, minuteOfDay))
+  const here = placementAt(plan, minute)
+
+  /*
+   * Speed and heading are measured from the positions actually returned,
+   * rather than computed from the underlying waypoints. The two used to
+   * disagree: the reported figures came from the raw chord while the marker
+   * was drawn from a clamped point, so the card could claim a heading a
+   * hundred degrees off what the dot was doing. Differencing the real output
+   * cannot drift out of step with it.
+   */
+  const ahead = placementAt(
+    plan,
+    Math.min(MINUTES_PER_DAY - 0.0001, minute + MOTION_PROBE_MINUTES),
+  )
+  const stepKm = haversineKm(here.coord, ahead.coord)
+  const speedKmh = here.moving ? (stepKm / MOTION_PROBE_MINUTES) * 60 : 0
 
   return {
-    ...point,
-    heading: bearingBetween(a, b),
-    moving: true,
-    accuracyMeters: 14 + 10 * (0.5 + 0.5 * Math.sin(minute * 0.35 + phase)),
-    speedKmh: Math.max(0, instantaneous),
+    ...here.coord,
+    heading: here.moving && stepKm > 1e-7 ? bearingBetween(here.coord, ahead.coord) : null,
+    moving: here.moving,
+    accuracyMeters: here.moving
+      ? 14 + 10 * (0.5 + 0.5 * Math.sin(minute * 0.35 + here.phase))
+      : 9 + 5 * (0.5 + 0.5 * Math.sin(minute * 0.21 + here.phase)),
+    speedKmh,
     statusLabel: 'Now',
     localMinuteOfDay: minute,
   }

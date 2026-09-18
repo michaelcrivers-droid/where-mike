@@ -143,9 +143,39 @@ export function useWarmMap(args: WarmMapArgs): WarmMap {
       return Math.min(height, containerHeight * 0.48)
     }
 
+    /**
+     * The band of the viewport the marker is allowed to sit in: clear of the
+     * edges, and clear of the card along the bottom. Null when the viewport is
+     * too short for any such band to exist.
+     */
+    const comfortBand = (): { top: number; bottom: number } | null => {
+      const width = container.clientWidth
+      const height = container.clientHeight
+      if (width <= 0 || height <= 0) return null
+      const padTop = Math.max(56, Math.min(170, height * 0.2))
+      const padBottom = Math.min(height * 0.62, obstructionPx() + 56)
+      if (padTop >= height - padBottom) return null
+      return { top: padTop, bottom: height - padBottom }
+    }
+
+    /**
+     * How far above the geometric centre to place the marker.
+     *
+     * Derived from the comfort band rather than guessed from the card height.
+     * The two used to be worked out independently, and on a short viewport
+     * they disagreed: the ease parked the marker a few pixels below the band's
+     * lower edge, the drift check immediately declared it adrift, and the map
+     * re-eased every 2.6 seconds for as long as the page stayed open. Aiming
+     * at a point inside the band makes that impossible by construction.
+     */
     const visualOffset = (): number => {
-      const wide = (container.clientWidth || window.innerWidth || 390) >= 768
-      return Math.round(obstructionPx() * (wide ? 0.22 : 0.4))
+      const height = container.clientHeight || window.innerHeight || 720
+      const band = comfortBand()
+      if (!band) return 0
+      // Slightly above the middle of the band, which reads better than dead
+      // centre without risking the lower edge.
+      const resting = band.top + (band.bottom - band.top) * 0.45
+      return Math.round(height / 2 - resting)
     }
 
     const snapTo = (lng: number, lat: number) => {
@@ -172,20 +202,15 @@ export function useWarmMap(args: WarmMapArgs): WarmMap {
 
     const isDrifting = (lng: number, lat: number): boolean => {
       const width = container.clientWidth
-      const height = container.clientHeight
-      if (width <= 0 || height <= 0) return false
-      const screen = map.project([lng, lat])
+      const band = comfortBand()
+      // Nowhere comfortable to put it: better to sit still than to re-ease
+      // every few seconds and never settle.
+      if (!band || width <= 0) return false
       const padX = Math.max(48, Math.min(140, width * 0.24))
-      const padTop = Math.max(56, Math.min(170, height * 0.2))
-      const padBottom = Math.min(height * 0.62, obstructionPx() + 56)
-      // A viewport too short for a comfort box at all: better to sit still
-      // than to re-ease every few seconds and never settle.
-      if (padTop >= height - padBottom || padX >= width - padX) return false
+      if (padX >= width - padX) return false
+      const screen = map.project([lng, lat])
       return (
-        screen.x < padX ||
-        screen.x > width - padX ||
-        screen.y < padTop ||
-        screen.y > height - padBottom
+        screen.x < padX || screen.x > width - padX || screen.y < band.top || screen.y > band.bottom
       )
     }
 
