@@ -1,0 +1,1 @@
+.wm-hatch{background-image:repeating-linear-gradient(135deg,#ffffff47 0 5px,#fff0 5px 10px)}.wm-pulse{animation:2.4s ease-in-out infinite wm-pulse}@keyframes wm-pulse{0%,to{opacity:.55}50%{opacity:1}}.wm-scroll{scrollbar-width:thin;scrollbar-color:#94a3b880 transparent}
