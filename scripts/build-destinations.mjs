@@ -368,7 +368,9 @@ export const DESTINATION_COUNT = ${destinations.length}
   for (const [k, v] of topCountries) {
     console.log(`  ${k.padEnd(20)} ${String(v).padStart(3)}  ${(100 * v / destinations.length).toFixed(1)}%`)
   }
-  console.log(`\nCountries represented: ${Object.keys(byCountryCount).length}`)
+  const isoCodes = new Set(destinations.map((d) => d.countryCode))
+  console.log(`\nCountry names: ${Object.keys(byCountryCount).length}`)
+  console.log(`ISO 3166-1 codes (includes territories): ${isoCodes.size}`)
   console.log(`Rejected for land safety: ${rejected.length}`)
   if (rejected.length) console.log('  ' + rejected.slice(0, 25).join('\n  '))
 }

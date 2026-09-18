@@ -579,7 +579,7 @@ export default function Control() {
               hint="Overrides the daily draw entirely. The itinerary above keeps showing what the generator would have picked."
               aside={
                 <span className={`font-mono text-[11px] tabular-nums ${MUTED}`}>
-                  {dataset.count} places · {dataset.countries} countries
+                  {dataset.count} places · {dataset.countries} countries & territories
                 </span>
               }
             >

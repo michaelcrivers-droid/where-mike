@@ -17,7 +17,8 @@ It is a joke gift, built to look like a real product rather than a prank.
 
 ## What it does
 
-- Picks one of **1,319 real destinations** in **179 countries** for each
+- Picks one of **1,319 real destinations** across **183 countries and
+  territories** for each
   calendar date, deterministically.
 - Simulates a believable day of movement around that city — a morning start,
   several stops, real dwell time, a walk or a drive home.
@@ -195,8 +196,9 @@ verified-land sector.
 
 ## The destination dataset
 
-`src/data/destinations.generated.ts` — 1,319 rows, 179 countries, 38 KB
-gzipped.
+`src/data/destinations.generated.ts` — 1,319 rows spanning 183 ISO 3166-1
+codes (179 distinct country names; the rest are territories such as Puerto
+Rico, Hong Kong and French Polynesia), 38 KB gzipped.
 
 It is a pipe-delimited string rather than an array of objects, because 1,300
 repeated copies of `"latitude":` cost several times more over the wire than the
