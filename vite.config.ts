@@ -5,10 +5,11 @@ import { defineConfig } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // Relative base keeps the built asset paths host-agnostic, so the same
-  // `dist/` works on Cloudflare Pages, GitHub Pages project sites and
-  // `file://` previews without a rebuild.
-  base: './',
+  // Relative paths keep a build host-agnostic: the same `dist/` works on any
+  // static host and from the filesystem. GitHub Pages project sites live under
+  // a repo-name prefix and need deep links like /where-mike/control to resolve
+  // assets correctly, so CI sets VITE_BASE=/where-mike/ for an absolute base.
+  base: process.env.VITE_BASE || './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
