@@ -211,6 +211,10 @@ export default function Control() {
     () => roamArea(state.destination, ROAMING_RADIUS_SCALE * overrides.radiusMultiplier),
     [state.destination, overrides.radiusMultiplier],
   )
+  // True when the land mask, not the slider, is deciding how far the day runs.
+  const radiusIsCapped =
+    area.radiusKm <
+    state.destination.safeRoamingRadiusKm * ROAMING_RADIUS_SCALE * overrides.radiusMultiplier - 1e-9
 
   const dataset = useMemo(() => datasetSummary(), [])
   const lockedByUrl = useMemo(() => urlOverrideKeys(), [])
@@ -711,12 +715,14 @@ export default function Control() {
 
             <Panel
               title="Roaming radius"
-              hint="Multiplies the dataset radius. Wider is not always better — the land mask still confines the wander."
+              hint="Multiplies the dataset radius, up to the distance the data build proved was dry land. Shrinking is always allowed."
             >
               <Field
                 label="Multiplier"
                 htmlFor={radiusInputId}
-                value={`${overrides.radiusMultiplier.toFixed(2)}x · ${area.radiusKm.toFixed(1)} km`}
+                value={`${overrides.radiusMultiplier.toFixed(2)}x · ${area.radiusKm.toFixed(1)} km${
+                  radiusIsCapped ? ' (capped)' : ''
+                }`}
               >
                 <Slider
                   id={radiusInputId}
@@ -727,11 +733,25 @@ export default function Control() {
                   onChange={(value) => setOverrides({ radiusMultiplier: value })}
                 />
               </Field>
+              {radiusIsCapped ? (
+                <p className={`mt-2 text-[11.5px] ${MUTED}`}>
+                  Held at{' '}
+                  <span className="font-mono tabular-nums">
+                    {state.destination.maxRoamingRadiusKm} km
+                  </span>
+                  : that is as far as the sea lets this wedge stretch. Pushing past it is how the
+                  marker ends up in the water, so the multiplier stops here.
+                </p>
+              ) : null}
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className={`text-[11.5px] ${MUTED}`}>
                   Dataset value for {state.destination.city}:{' '}
                   <span className="font-mono tabular-nums">
                     {state.destination.safeRoamingRadiusKm} km
+                  </span>
+                  {' · verified ceiling '}
+                  <span className="font-mono tabular-nums">
+                    {state.destination.maxRoamingRadiusKm} km
                   </span>
                 </span>
                 <Button

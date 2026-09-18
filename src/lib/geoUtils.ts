@@ -161,9 +161,18 @@ export interface RoamArea {
 export function roamArea(destination: Destination, radiusMultiplier = 1): RoamArea {
   const run = longestLandRun(destination.landSectors)
   const window = runToBearingWindow(run)
+  // Scaling up is capped at the distance the data build actually proved was
+  // land. Without the cap a 3x multiplier walks the marker straight past the
+  // evidence — 17km out into the bay, for somewhere like Shenzhen. Scaling
+  // down is always safe, so only the upper end is clamped.
+  const ceiling = Math.max(
+    destination.safeRoamingRadiusKm,
+    destination.maxRoamingRadiusKm || destination.safeRoamingRadiusKm,
+  )
+  const requested = destination.safeRoamingRadiusKm * radiusMultiplier
   return {
     centre: { latitude: destination.latitude, longitude: destination.longitude },
-    radiusKm: Math.max(0.3, destination.safeRoamingRadiusKm * radiusMultiplier),
+    radiusKm: Math.max(0.3, Math.min(requested, ceiling)),
     ...window,
   }
 }

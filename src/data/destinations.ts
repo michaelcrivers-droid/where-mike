@@ -37,6 +37,7 @@ function parseTable(): Destination[] {
       safeRoamingRadiusKm: Number(c[9]),
       category: c[10] as DestinationCategory,
       landSectors: Number(c[11]),
+      maxRoamingRadiusKm: Number(c[12]),
     }
   }
   return out

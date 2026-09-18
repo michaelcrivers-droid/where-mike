@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest'
 import { getDestinations } from '@/data/destinations'
-import { createMovementPlan, resolvePosition } from './movementEngine'
+import { createMovementPlan, resolvePosition } from '@/lib/movementEngine'
 import {
   bearingBetween, haversineKm, isBearingInRun, isBearingOnLand, longestLandRun, roamArea,
-} from './geoUtils'
+} from '@/lib/geoUtils'
 import type { MovementMode } from '@/types'
 
 const MODES: MovementMode[] = ['stationary', 'walking', 'tourist', 'driving']

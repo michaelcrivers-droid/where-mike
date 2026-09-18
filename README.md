@@ -179,6 +179,13 @@ is dry, which is why Cape Town gets 8 km and a coral atoll gets 1.4 km. Four
 places (Gibraltar's centroid, two atolls, one island town) could not be made
 safe at any radius and were dropped.
 
+Each row also carries a **verified ceiling** — how far that wedge can be
+stretched and still be land, sampled densely along its whole length. The
+control panel's radius multiplier is clamped to it. Without that clamp, setting
+3x walks the marker straight past the evidence: Shenzhen ends up 17 km out in
+the bay. Paris has room to reach 21 km; Shenzhen and Malé have none at all, and
+their ceiling is simply their default radius.
+
 This is verified rather than asserted. `src/lib/exhaustive.test.ts` samples
 **every destination × every mode × four dates × every three minutes** — about
 10.1 million positions — and checks each one is inside both the radius and a
@@ -196,7 +203,7 @@ repeated copies of `"latitude":` cost several times more over the wire than the
 numbers do, and one-line-per-place is far easier to hand-edit.
 
 ```
-id|city|region|country|countryCode|continent|lat|lng|timezone|radiusKm|category|landSectors
+id|city|region|country|countryCode|continent|lat|lng|timezone|radiusKm|category|landSectors|maxRadiusKm
 ```
 
 Geographic spread:
@@ -336,13 +343,15 @@ Two options.
 `src/data/destinations.generated.ts`:
 
 ```
-fr-annecy|Annecy|Haute-Savoie|France|FR|EU|45.8992|6.1294|Europe/Paris|3.5|mountain|65535
+fr-annecy|Annecy|Haute-Savoie|France|FR|EU|45.8992|6.1294|Europe/Paris|3.5|mountain|65535|3.5
 ```
 
 `landSectors` is a 16-bit mask where bit *N* covers the compass sector starting
 at *N* × 22.5°. `65535` means "land in every direction", which is right for an
 inland city. For anywhere coastal, either pick a conservative radius and clear
-the seaward bits, or regenerate properly.
+the seaward bits, or regenerate properly. The last column is the verified
+ceiling for the radius multiplier; setting it equal to the radius is the safe
+choice when adding a row by hand.
 
 **Properly**, by regenerating — edit `scripts/curation.mjs` (quotas,
 `MUST_INCLUDE`, exclusions, categories) and run `npm run data:build`. The land

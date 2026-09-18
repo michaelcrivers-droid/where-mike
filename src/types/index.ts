@@ -41,6 +41,12 @@ export interface Destination {
   timezone: string
   /** How far from the city centre the simulated person may wander, in km. */
   safeRoamingRadiusKm: number
+  /**
+   * The furthest that radius may be stretched and still be verified land, in
+   * km. The control panel's roaming multiplier is clamped to this; for a
+   * coastal city with no room to grow it simply equals the default radius.
+   */
+  maxRoamingRadiusKm: number
   category: DestinationCategory
   /**
    * 16-bit compass mask. Bit N is set when the sector starting at

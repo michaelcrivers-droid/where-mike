@@ -41,6 +41,9 @@ const fakeDestination = (over: Partial<Destination> = {}): Destination => ({
   longitude: 2.3522,
   timezone: 'Europe/Paris',
   safeRoamingRadiusKm: 6,
+  // Plenty of verified headroom by default, so the scaling tests below are
+  // testing the multiplier rather than the ceiling. The clamp has its own test.
+  maxRoamingRadiusKm: 40,
   category: 'major-city',
   landSectors: 0xffff,
   ...over,
@@ -320,6 +323,18 @@ describe('roamArea', () => {
     expect(roamArea(d).radiusKm).toBeCloseTo(6, 9)
     expect(roamArea(d, 2).radiusKm).toBeCloseTo(12, 9)
     expect(roamArea(d, 0.5).radiusKm).toBeCloseTo(3, 9)
+  })
+
+  it('never scales past the radius the data build verified as land', () => {
+    // Shenzhen's real row has no headroom at all: the sea starts too close for
+    // the wedge to be stretched, so the ceiling equals the default radius.
+    const hemmedIn = fakeDestination({ safeRoamingRadiusKm: 6, maxRoamingRadiusKm: 6 })
+    expect(roamArea(hemmedIn, 3).radiusKm).toBeCloseTo(6, 9)
+    expect(roamArea(hemmedIn, 0.5).radiusKm).toBeCloseTo(3, 9)
+
+    const someRoom = fakeDestination({ safeRoamingRadiusKm: 6, maxRoamingRadiusKm: 9 })
+    expect(roamArea(someRoom, 3).radiusKm).toBeCloseTo(9, 9)
+    expect(roamArea(someRoom, 1.2).radiusKm).toBeCloseTo(7.2, 9)
   })
 
   it('never lets the radius collapse below the 300 m floor', () => {

@@ -42,6 +42,12 @@ const MIN_LAND_SECTORS = 5
 /** Never shrink a roaming radius below this. */
 const MIN_RADIUS_KM = 1.4
 const MAX_RADIUS_KM = 9
+/**
+ * The furthest the control panel's radius multiplier is ever allowed to push
+ * the marker, before land verification. The real ceiling per destination is
+ * whatever survives the check below, which is usually far less.
+ */
+const MAX_EXPANDED_RADIUS_KM = 22
 
 const CONTINENT_CODE = {
   'North America': 'NA', 'South America': 'SA', Europe: 'EU',
@@ -105,13 +111,13 @@ function baseRadiusKm(category, pop) {
  * only when three sample points along it — near, mid and the rim — are all
  * on land and outside any mapped lake.
  */
-function landSectorMask(oracle, lat, lng, radiusKm) {
+function landSectorMask(oracle, lat, lng, radiusKm, fractions = [0.45, 0.75, 1]) {
   let mask = 0
   let count = 0
   for (let s = 0; s < SECTORS; s++) {
     const bearing = (s * 360) / SECTORS
     let ok = true
-    for (const frac of [0.45, 0.75, 1]) {
+    for (const frac of fractions) {
       const [plat, plng] = project(lat, lng, radiusKm * frac, bearing)
       if (!oracle.isLand(plat, plng)) { ok = false; break }
     }
@@ -140,6 +146,52 @@ function fitRadius(oracle, lat, lng, startKm) {
   }
   const floor = landSectorMask(oracle, lat, lng, MIN_RADIUS_KM)
   return floor.count >= 3 ? { km: MIN_RADIUS_KM, ...floor } : null
+}
+
+/** The longest circular run of set sectors, mirroring the runtime helper. */
+function longestRun(mask) {
+  if (mask === 0) return { start: 0, length: 0 }
+  if ((mask & 0xffff) === 0xffff) return { start: 0, length: SECTORS }
+  let best = { start: 0, length: 0 }
+  for (let start = 0; start < SECTORS; start++) {
+    if ((mask & (1 << start)) === 0) continue
+    if ((mask & (1 << ((start + SECTORS - 1) % SECTORS))) !== 0) continue
+    let length = 0
+    while (length < SECTORS && (mask & (1 << ((start + length) % SECTORS))) !== 0) length++
+    if (length > best.length) best = { start, length }
+  }
+  return best
+}
+
+function runToMask(run) {
+  let mask = 0
+  for (let i = 0; i < run.length; i++) mask |= 1 << ((run.start + i) % SECTORS)
+  return mask
+}
+
+/**
+ * How far the day's wedge can be stretched and still be on land.
+ *
+ * The sector mask proves dry land out to the chosen radius and says nothing
+ * about anything beyond it, so scaling the radius up at runtime — which the
+ * control panel's multiplier does — would walk the marker straight past the
+ * evidence and into the sea. Shenzhen at 3x lands 16km out in the bay.
+ *
+ * So the ceiling is measured here instead: push the radius out step by step
+ * and keep going only while every sector in the wedge the runtime actually
+ * uses is still land, sampled densely along its whole length.
+ */
+function maxSafeRadiusKm(oracle, lat, lng, baseKm, mask) {
+  const wedge = runToMask(longestRun(mask))
+  if (wedge === 0) return baseKm
+  const dense = [0.25, 0.4, 0.55, 0.7, 0.85, 1]
+  let best = baseKm
+  for (let km = baseKm * 1.25; km <= MAX_EXPANDED_RADIUS_KM; km *= 1.25) {
+    const probe = landSectorMask(oracle, lat, lng, km, dense)
+    if ((probe.mask & wedge) !== wedge) break
+    best = Number(km.toFixed(2))
+  }
+  return best
 }
 
 function pickCategory(key, city, pop, coastal) {
@@ -221,6 +273,8 @@ async function main() {
         continue
       }
 
+      const maxRadius = maxSafeRadiusKm(oracle, city.lat, city.lng, fitted.km, fitted.mask)
+
       let id = `${iso2.toLowerCase()}-${slug(city.city)}`
       if (usedIds.has(id)) {
         let n = 2
@@ -240,6 +294,7 @@ async function main() {
         longitude: Number(city.lng.toFixed(4)),
         timezone: city.timezone,
         safeRoamingRadiusKm: fitted.km,
+        maxRoamingRadiusKm: maxRadius,
         category,
         landSectors: fitted.mask,
       })
@@ -253,6 +308,7 @@ async function main() {
   const lines = destinations.map((d) => [
     d.id, d.city, d.region, d.country, d.countryCode, CONTINENT_CODE[d.continent],
     d.latitude, d.longitude, d.timezone, d.safeRoamingRadiusKm, d.category, d.landSectors,
+    d.maxRoamingRadiusKm,
   ].join('|'))
 
   const byContinent = {}
@@ -277,13 +333,17 @@ async function main() {
 ${banner}
 //
 // Each row is:
-//   id|city|region|country|countryCode|continent|lat|lng|timezone|radiusKm|category|landSectors
+//   id|city|region|country|countryCode|continent|lat|lng|timezone|radiusKm|category|landSectors|maxRadiusKm
 //
 // landSectors is a 16-bit mask. Bit N is set when the compass sector
 // starting at N * 22.5 degrees is dry land all the way out to the roaming
 // radius, checked against Natural Earth 10m land and lake polygons at build
 // time. The roaming engine only ever places the marker inside a set bit,
 // which is what stops it turning up in the sea.
+//
+// maxRadiusKm is how far that wedge can be stretched and still be verified
+// land, sampled densely along its whole length. It is the ceiling the control
+// panel's roaming-radius multiplier is clamped to.
 
 export const DESTINATION_TABLE = \`
 ${lines.join('\n')}\`

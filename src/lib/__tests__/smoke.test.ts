@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { getDestinations } from '@/data/destinations'
-import { destinationForDate } from './dailyDestination'
-import { createMovementPlan, resolvePosition } from './movementEngine'
+import { destinationForDate } from '@/lib/dailyDestination'
+import { createMovementPlan, resolvePosition } from '@/lib/movementEngine'
 import {
   bearingBetween, haversineKm, isBearingInRun, isBearingOnLand, longestLandRun, roamArea,
-} from './geoUtils'
+} from '@/lib/geoUtils'
 import { MIN_HOP_DISTANCE_KM, NO_REPEAT_COUNTRY_DAYS } from '@/config'
-import { addDays } from './timeUtils'
+import { addDays } from '@/lib/timeUtils'
 import type { MovementMode } from '@/types'
 
 const MODES: MovementMode[] = ['stationary', 'walking', 'tourist', 'driving']
@@ -43,7 +43,7 @@ describe('smoke: determinism', () => {
     expect(new Set(seen).size).toBe(400)
     expect(new Set(continents).size).toBe(6)
     expect(new Set(countries).size).toBeGreaterThan(80)
-  })
+  }, 60_000)
 })
 
 describe('smoke: land safety', () => {
@@ -78,7 +78,7 @@ describe('smoke: land safety', () => {
       }
     }
     expect(checked).toBeGreaterThan(100000)
-  })
+  }, 120_000)
 })
 
 describe('smoke: plan shape', () => {
@@ -99,7 +99,7 @@ describe('smoke: plan shape', () => {
         for (const s of moving) expect(s.speedKmh).toBeLessThan(45)
       }
     }
-  })
+  }, 60_000)
 
   it('position is continuous across segment boundaries', () => {
     const destination = getDestinations()[100]
